@@ -1,0 +1,19 @@
+node_modules/
+
+# 비밀 키와 로컬 DB는 어느 폴더에 있든 올리지 않는다
+.env
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
+
+# 공개 저장소에 올리지 않는 문서 (인터뷰 질문, 시연 가이드, 내부 정리)
+docs/
+
+# KIPRIS 응답 예시: 재배포 약관 확인 전까지 보류
+backend/docs/kipris-sample.xml
+
+# 개인 환경 설정 (Windows 전용 PATH 설정, Claude 앱 미리보기 설정)
+.vscode/settings.json
+.claude/
