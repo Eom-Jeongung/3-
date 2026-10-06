@@ -1,0 +1,14 @@
+{
+  "name": "patent-dashboard-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "특허 현황 자동 업데이트 시스템 — 인터뷰 전 가정 검증용 데모 v1",
+  "scripts": {
+    "setup": "npm install && npm install --prefix backend && npm install --prefix frontend && npm run db:init --prefix backend",
+    "dev": "concurrently --names API,WEB --prefix-colors red,blue --kill-others-on-fail \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "sync": "npm run sync --prefix backend"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}
