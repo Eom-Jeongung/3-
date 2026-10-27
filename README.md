@@ -64,7 +64,7 @@ React의 핵심은 **"상태(state)만 바꾸면 화면이 알아서 다시 그�
 
 ### 왜 Python이 아니라 JavaScript인가
 
-PRD의 "기술 스택 및 아키텍처"에서 **Node.js(Express) + Vite+React**로 정했고, 이 데모도 그대로 따랐어요.
+데모 PRD에서 아키텍쳐를 **Node.js(Express) + Vite+React**로 정했고, 그대로 따랐어요.
 Python으로도 만들 수 있었지만, 이 프로젝트 조건에서는 JavaScript가 더 맞다고 판단한 이유는 다음과 같아요.
 
 **1. 화면은 어차피 JavaScript예요 (가장 큰 이유)**
@@ -270,20 +270,3 @@ KIPRIS 쪽 설정(회사, 키워드, 샘플)을 바꿨다면 새로고침 버튼
 - **기술분야 비교 방식:** 샘플 100건은 대부분 2006~2007년 LCD 특허라서 분류 결과가 98건 미분류였어요. 그래서 KIPRIS 전체 출원을 분야 키워드로 검색한 **건수**로 비교합니다. 이 결과는 `tech_category_stats` 테이블에 저장해요.
 - **환경변수 이름:** `PORT`를 `API_PORT`로 바꿨어요. 실행 환경이 `PORT`를 미리 정해두면 충돌이 났기 때문이에요.
 - **만료일 계산:** 출원일+20년(실용신안은 +10년)으로 단순 계산해요. 존속기간 연장과 연차료 미납으로 인한 조기 소멸은 반영하지 않았어요.
-
----
-
-## 6. 문제 해결
-
-| 증상 | 원인과 해결 |
-|---|---|
-| `'&&' 토큰은 이 버전에서 올바른 문 구분 기호가 아닙니다` | Windows PowerShell 5.1은 `&&`를 지원하지 않아요. 루트에서 `npm run dev`를 쓰거나 `&&` 대신 `;`를 쓰세요 |
-| `'npm' 용어가 ... 인식되지 않습니다` | VS Code가 Node.js 설치 전에 켜져 있어서 옛날 PATH를 쓰는 중이에요. **VS Code 창을 전부 닫고** 다시 열거나, 그 터미널에서 `$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')`를 실행하세요 (그 터미널에만 적용) |
-| 화면에 "목록을 불러오지 못했습니다" | 백엔드가 안 떠 있어요. `npm run dev` 로그에서 `[API]` 쪽 오류를 확인하세요 |
-| `EADDRINUSE` (포트 사용 중) | 이미 다른 터미널에서 실행 중이에요. 그 터미널에서 `Ctrl+C`로 끄고 다시 실행하세요 |
-| `KIPRIS 오류 31: DEADLINE_HAS_EXPIRED_ERROR` | KIPRIS Plus에서 서비스 신청을 끝까지 완료하지 않았어요. 장바구니에서 신청 완료를 눌러 주세요 |
-| `KIPRIS 오류 30: SERVICE_KEY_IS_NOT_REGISTERED_ERROR` | 키가 잘못됐거나, 신청하지 않은 API를 호출했어요 |
-| `KIPRIS_API_KEY가 .env에 없습니다` | `backend/.env`에 키를 넣고 **저장(Ctrl+S)** 했는지 확인하세요 |
-
-KIPRIS 무료 한도는 월 1,000회예요. 새로고침 한 번에 약 28회를 써요(샘플 18회 + 분야 통계 10회).
-`npm run sync`는 같은 요청의 응답을 `backend/data/kipris-cache`에 저장해 두고 재사용해요. 다만 샘플 구간(만료임박 범위)이 오늘 날짜로 계산되기 때문에 **날짜가 바뀌면 캐시가 맞지 않아 KIPRIS를 다시 호출**해요. 캐시를 무시하고 새로 받으려면 `npm run sync -- --fresh`로 실행하세요.

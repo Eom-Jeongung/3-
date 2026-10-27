@@ -46,22 +46,48 @@ export default function App() {
     }
   }
 
-  return (
-    <main className="page">
-      <header className="page-header">
-        <div>
-          <h1>특허 현황 대시보드 <span className="draft-tag">가정 검증용 초안</span></h1>
-          <p className="subtitle">엘지디스플레이(자사) · 삼성디스플레이(경쟁사) — KIPRIS 공개 데이터 샘플</p>
-        </div>
-        <div className="sync-box">
-          <span>마지막 갱신: <strong>{formatDateTime(data?.lastSyncedAt)}</strong></span>
-          <button onClick={handleSync} disabled={syncing}>
-            {syncing ? '갱신 중…' : '새로고침'}
-          </button>
-        </div>
-      </header>
+  // 상단 요약 카드: 필터와 무관하게 출원인 구분(자사/경쟁사) 기준 건수
+  const total = (data?.statuses ?? []).reduce((sum, s) => sum + s.n, 0)
+  const registered = (data?.statuses ?? []).find((s) => s.legal_status === '등록')?.n ?? 0
+  const stat = (n) => (data ? n.toLocaleString('ko-KR') : '–')
 
-      {error && <p className="error">{error}</p>}
+  return (
+    <>
+      <nav className="topbar" aria-label="상단 메뉴">
+        <div className="topbar-inner">
+          <span className="brand">특허 현황</span>
+          <div className="sync-box">
+            <span className="sync-time">마지막 갱신 <strong>{formatDateTime(data?.lastSyncedAt)}</strong></span>
+            <button onClick={handleSync} disabled={syncing}>
+              {syncing ? '갱신 중…' : '새로고침'}
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <main className="page">
+        <header className="page-header hero">
+          <span className="draft-tag">가정 검증용 초안</span>
+          <h1>특허 현황 대시보드</h1>
+          <p className="subtitle">엘지디스플레이(자사) · 삼성디스플레이(경쟁사)<br />KIPRIS 공개 데이터 샘플로 만든 데모입니다.</p>
+        </header>
+
+        <section className="stats" aria-label="요약">
+          <div className="stat">
+            <span className="stat-label">전체 특허</span>
+            <span className="stat-value">{stat(total)}<small>건</small></span>
+          </div>
+          <div className="stat">
+            <span className="stat-label">등록 유지</span>
+            <span className="stat-value">{stat(registered)}<small>건</small></span>
+          </div>
+          <div className="stat stat-alert">
+            <span className="stat-label">{data?.expiringMonths ?? 6}개월 내 만료</span>
+            <span className="stat-value">{stat(data?.expiringCount ?? 0)}<small>건</small></span>
+          </div>
+        </section>
+
+        {error && <p className="error">{error}</p>}
 
       <section className="card">
         <FilterBar
@@ -73,6 +99,7 @@ export default function App() {
         />
         {data && (
           <PatentTable
+            key={JSON.stringify([filters, sort])}
             items={data.items}
             expiringMonths={data.expiringMonths}
             sort={sort}
@@ -85,6 +112,7 @@ export default function App() {
       <TechCategoryCompare refreshKey={data?.lastSyncedAt} />
 
       {selectedId && <PatentDetail id={selectedId} onClose={() => setSelectedId(null)} />}
-    </main>
+      </main>
+    </>
   )
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const daysUntil = (date) => Math.ceil((new Date(date) - new Date()) / 86_400_000)
+import { urgencyBadgeText, urgencyOf } from '../urgency.js'
 const formatAppNo = (n) => (n?.length === 13 ? `${n.slice(0, 2)}-${n.slice(2, 6)}-${n.slice(6)}` : n)
 
 // 상세 패널: 목록에서 행을 누르면 오른쪽에서 열린다 (GET /api/patents/:id)
@@ -36,6 +36,7 @@ export default function PatentDetail({ id, onClose }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose, zoomed])
 
+  const level = patent ? urgencyOf(patent.is_expiring, patent.expiry_date) : null
   const names = patent?.applicant_name.split('|').map((s) => s.trim()) ?? []
   const ipcs = patent?.ipc_codes?.split('|').map((s) => s.trim()).filter(Boolean) ?? []
 
@@ -54,7 +55,7 @@ export default function PatentDetail({ id, onClose }) {
               <span className={`status ${patent.legal_status === '등록' ? 'status-registered' : patent.legal_status === '공개' ? 'status-pending' : 'status-dead'}`}>
                 {patent.legal_status}
               </span>
-              {patent.is_expiring && <span className="badge-expiring">만료임박 D-{daysUntil(patent.expiry_date)}</span>}
+              {level && <span className={`badge-expiring badge-${level}`}>만료임박 · {urgencyBadgeText(level, patent.expiry_date)}</span>}
               <span className="kw">{patent.tech_category}</span>
             </div>
 
@@ -78,7 +79,7 @@ export default function PatentDetail({ id, onClose }) {
               <li><span>출원일</span><b className="mono">{patent.application_date ?? '-'}</b></li>
               <li><span>공개일</span><b className="mono">{patent.open_date ?? '-'}</b></li>
               <li><span>등록일</span><b className="mono">{patent.registration_date ?? '-'}</b></li>
-              <li className={patent.is_expiring ? 'timeline-expiring' : ''}>
+              <li className={level ? `timeline-expiring timeline-${level}` : ''}>
                 <span>만료예정일</span>
                 <b className="mono">{patent.expiry_date ?? '해당 없음'}</b>
               </li>

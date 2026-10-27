@@ -17,3 +17,9 @@ backend/docs/kipris-sample.xml
 # 개인 환경 설정 (Windows 전용 PATH 설정, Claude 앱 미리보기 설정)
 .vscode/settings.json
 .claude/
+
+# 나만 보는 메모 (팀원과 공유하지 않음)
+readmeforme.md
+
+# 수업 강의자료 (공유 대상 아님)
+강의자료/
