@@ -188,6 +188,10 @@ npm run dev
 명령 하나로 백엔드(API)와 화면(WEB)이 함께 켜져요. 로그 앞에 `[API]`, `[WEB]`이 붙어서 어느 쪽 출력인지 구분됩니다.
 브라우저에서 **http://localhost:5173** 을 여세요. 끌 때는 터미널에서 `Ctrl+C`를 누릅니다.
 
+> 🖥️ **천안 서버에서 실행할 때:** 포트를 따로 정하지 않아도 돼요. 화면은 내 포트(`echo $PORT`, 예: 3053), 백엔드는 `$PORT + 100`(예: 3153)으로 자동으로 켜집니다.
+> `backend/.env`는 `backend/.env.example`을 복사해 만들고, `API_PORT`는 비워 두세요.
+> 브라우저는 VS Code 아래 **PORTS 탭 → 내 포트 옆 지구본**으로 엽니다. 끌 때는 `Ctrl+C` 또는 `devstop` (`pkill node`는 VS Code까지 꺼지니 쓰지 마세요).
+
 > 💡 `cd backend && npm run dev`처럼 `&&`를 쓰면 VS Code 기본 터미널(Windows PowerShell 5.1)에서 오류가 나요.
 > 위의 `npm run dev`는 `&&` 없이 루트에서 바로 실행되도록 만들어 두었어요.
 > 명령 두 개를 이어서 실행하고 싶으면 `&&` 대신 `;`를 쓰세요. 예: `cd backend; npm run sync`
