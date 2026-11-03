@@ -1,13 +1,14 @@
 // 수집·가공·저장 파이프라인
 // 데모 v1: 수동 실행만 (node-cron 스케줄러는 보류, SYNC_INTERVAL_CRON 미사용)
 import { db, initSchema } from './db.js';
-import { searchPatents, APPLICANTS, STATUS_CODES } from './kipris.js';
-import { classifyTech, TECH_RULES, toKiprisQuery } from './classify.js';
+import { searchPatents, APPLICANTS } from './kipris.js';
+import { classifyTech } from './classify.js';
+import { classifyPatents, hasCriteria } from './classification.js';
 
 // ---- 날짜 유틸 ----
 const ymd = (d) => d.toISOString().slice(0, 10).replaceAll('-', '');
 const addYears = (d, n) => { const r = new Date(d); r.setUTCFullYear(r.getUTCFullYear() + n); return r; };
-const addMonths = (d, n) => { const r = new Date(d); r.setUTCMonth(r.getUTCMonth() + n); return r; };
+const addDays = (d, n) => { const r = new Date(d); r.setUTCDate(r.getUTCDate() + n); return r; };
 
 // 'YYYYMMDD' -> 'YYYY-MM-DD' (빈 값이면 null)
 export function toIsoDate(s) {
@@ -44,24 +45,6 @@ export function normalize(item, applicantType, syncedAt) {
   return { ...row, tech_category: classifyTech(row) };
 }
 
-// 데모용 샘플링: 회사별 50건, 상태·만료시점이 고르게 섞이도록 구간별로 가져온다
-function sampleBuckets(today = new Date()) {
-  const range = (from, to) => `${ymd(from)}~${ymd(to)}`;
-  const expiringFrom = addYears(today, -20);            // 오늘 만료
-  const expiringTo = addMonths(expiringFrom, 6);        // 6개월 뒤 만료
-  return [
-    { name: '등록·6개월 내 만료', count: 10, lastvalue: 'R', applicationDate: range(expiringFrom, expiringTo) },
-    { name: '등록·3년 내 만료', count: 8, lastvalue: 'R', applicationDate: range(expiringTo, addYears(expiringFrom, 3)) },
-    { name: '등록·2010~2013 출원', count: 4, lastvalue: 'R', applicationDate: '20100101~20131231' },
-    { name: '등록·2014~2017 출원', count: 4, lastvalue: 'R', applicationDate: '20140101~20171231' },
-    { name: '등록·2018~ 출원', count: 4, lastvalue: 'R', applicationDate: `20180101~${ymd(today)}` },
-    { name: '공개(출원중)', count: 8, lastvalue: STATUS_CODES.공개 },
-    { name: '소멸', count: 6, lastvalue: STATUS_CODES.소멸 },
-    { name: '거절', count: 3, lastvalue: STATUS_CODES.거절 },
-    { name: '취하', count: 3, lastvalue: STATUS_CODES.취하 },
-  ];
-}
-
 const upsert = db.prepare(`
   INSERT INTO patents (
     application_number, applicant_name, applicant_type, title, application_date, registration_date,
@@ -91,47 +74,72 @@ const upsertStat = db.prepare(`
     total_count = excluded.total_count, query = excluded.query, synced_at = excluded.synced_at
 `);
 const touch = db.prepare('UPDATE patents SET last_synced_at = ? WHERE application_number = ?');
-const logRun = db.prepare('INSERT INTO sync_log (source, records_fetched, records_changed, status) VALUES (?, ?, ?, ?)');
+export const logRun = db.prepare('INSERT INTO sync_log (source, records_fetched, records_changed, status) VALUES (?, ?, ?, ?)');
 
-/** @returns {Promise<{ fetched: number, changed: number, syncedAt: string }>} */
-export async function runSync({ source = 'manual', useCache = true, log = () => {} } = {}) {
+/** normalize된 행들을 한 트랜잭션으로 저장하고, 실제로 바뀐 건수를 돌려준다 */
+export function saveRows(rows, syncedAt) {
+  let changed = 0;
+  db.transaction(() => {
+    for (const r of rows) {
+      const { changes } = upsert.run(r);
+      if (changes) changed++;
+      else touch.run(syncedAt, r.application_number);
+    }
+  })();
+  return changed;
+}
+
+// ---- 새로고침 (증분 수집) ----
+// 전체 수집(npm run collect) 이후에는 "DB에 있는 마지막 날짜 이후"만 KIPRIS에 묻는다
+// - 공개일(openDate): 새로 공개된 특허
+// - 등록일(registerDate): 공개 없이 바로 등록된 특허 + 공개 → 등록으로 상태가 바뀐 특허
+// 보통 회사 2 × 기준 2 = 4회 호출로 끝난다 (예전 샘플 방식은 28회)
+const OVERLAP_DAYS = 30; // KIPRIS에 늦게 올라오는 건을 놓치지 않게 겹쳐서 조회 (겹친 건은 upsert라 중복 저장 안 됨)
+const PAGE_SIZE = 500;
+const latestDates = db.prepare('SELECT MAX(open_date) open, MAX(registration_date) reg FROM patents WHERE applicant_type = ?');
+const exists = db.prepare('SELECT 1 FROM patents WHERE application_number = ?');
+const countByType = db.prepare('SELECT COUNT(*) n FROM patents WHERE applicant_type = ?');
+
+/** @returns {Promise<{ fetched: number, added: number, changed: number, calls: number, syncedAt: string }>} */
+export async function runSync({ source = 'manual', useCache = false, log = () => {} } = {}) {
   initSchema();
   const syncedAt = new Date().toISOString();
-  const rows = [];
+  const to = ymd(new Date());
+  const byNumber = new Map(); // 공개일·등록일 조회에 같은 특허가 겹쳐 나올 수 있어 출원번호로 합친다
+  let calls = 0;
   try {
-    // 구간별 호출을 병렬로 보내 수동 새로고침 시간을 줄인다 (순차 호출 시 약 27초)
-    const jobs = Object.entries(APPLICANTS).flatMap(([type, applicant]) =>
-      sampleBuckets().map(async ({ name, count, ...params }) => {
-        const { items } = await searchPatents({ applicant, ...params, numOfRows: String(count) }, { useCache });
-        log(`[${type}] ${name}: ${items.length}건`);
-        return items.map((it) => normalize(it, type, syncedAt));
-      }),
-    );
-    // 기술분야별 전체 건수: 분야 키워드로 초록 검색해 totalCount만 사용 (회사 2 × (분야 4 + 전체) = 10회 호출)
-    // '전체'는 회사별 총 출원 건수 — 비중(%) 계산용
-    const statJobs = Object.entries(APPLICANTS).flatMap(([type, applicant]) =>
-      [...TECH_RULES, { name: '전체', keywords: [] }].map(async (rule) => {
-        const query = toKiprisQuery(rule);
-        const params = { applicant, numOfRows: '1', ...(query && { astrtCont: query }) };
-        const { totalCount } = await searchPatents(params, { useCache });
-        return { tech_category: rule.name, applicant_type: type, total_count: totalCount, query, synced_at: syncedAt };
-      }),
-    );
-    const [batches, stats] = await Promise.all([Promise.all(jobs), Promise.all(statJobs)]);
-    for (const batch of batches) rows.push(...batch);
-    db.transaction(() => { for (const s of stats) upsertStat.run(s); })();
-    let changed = 0;
+    for (const [type, applicant] of Object.entries(APPLICANTS)) {
+      const { open, reg } = latestDates.get(type);
+      if (!open) throw new Error('DB가 비어 있습니다. 먼저 backend에서 npm run collect로 전체 수집을 하세요');
+      for (const [field, last] of [['openDate', open], ['registerDate', reg ?? open]]) {
+        const from = ymd(addDays(new Date(last), -OVERLAP_DAYS));
+        for (let page = 1, pages = 1; page <= pages; page++) {
+          const res = await searchPatents(
+            { applicant, [field]: `${from}~${to}`, numOfRows: String(PAGE_SIZE), pageNo: String(page) },
+            { useCache },
+          );
+          if (!res.fromCache) calls++;
+          pages = Math.ceil(res.totalCount / PAGE_SIZE);
+          for (const it of res.items) byNumber.set(it.applicationNumber, normalize(it, type, syncedAt));
+        }
+        log(`[${type}] ${field} ${from}~${to}`);
+      }
+    }
+    const rows = [...byNumber.values()];
+    const added = rows.filter((r) => !exists.get(r.application_number)).length;
+    const changed = saveRows(rows, syncedAt);
+    // 새로 받은 특허도 바로 필터에 잡히도록 분류한다 (받은 건만 다시 계산)
+    if (hasCriteria()) classifyPatents({ numbers: rows.map((r) => r.application_number) });
+    // 비중(%) 계산용 회사별 전체 건수: 전체 수집 이후로는 DB 건수가 곧 KIPRIS 전체 건수 (API 호출 불필요)
     db.transaction(() => {
-      for (const r of rows) {
-        const { changes } = upsert.run(r);
-        if (changes) changed++;
-        else touch.run(syncedAt, r.application_number);
+      for (const type of Object.keys(APPLICANTS)) {
+        upsertStat.run({ tech_category: '전체', applicant_type: type, total_count: countByType.get(type).n, query: '', synced_at: syncedAt });
       }
     })();
     logRun.run(source, rows.length, changed, 'success');
-    return { fetched: rows.length, changed, syncedAt };
+    return { fetched: rows.length, added, changed, calls, syncedAt };
   } catch (err) {
-    logRun.run(source, rows.length, 0, `error: ${err.message}`);
+    logRun.run(source, byNumber.size, 0, `error: ${err.message}`);
     throw err;
   }
 }

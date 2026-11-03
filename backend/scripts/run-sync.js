@@ -1,14 +1,10 @@
-// 수동 수집 실행: npm run sync  (캐시 무시하고 새로 받으려면 npm run sync -- --fresh)
+// 새로고침(증분 수집) 실행: npm run sync — 화면의 새로고침 버튼과 같은 동작
+// DB가 비어 있으면 먼저 npm run collect로 전체 수집을 해야 한다
 import { runSync } from '../src/sync.js';
 import { db } from '../src/db.js';
 
-const useCache = !process.argv.includes('--fresh');
-const result = await runSync({ source: 'manual', useCache, log: console.log });
-console.log(`\n수집 ${result.fetched}건 / 변경 ${result.changed}건 / ${result.syncedAt}`);
+const result = await runSync({ source: 'manual', log: console.log });
+console.log(`\n새 특허 ${result.added}건 / 받은 ${result.fetched}건 중 변경 ${result.changed}건 / KIPRIS 호출 ${result.calls}회 / ${result.syncedAt}`);
 
-const summary = db.prepare(`
-  SELECT applicant_type, legal_status, COUNT(*) n,
-         SUM(expiry_date BETWEEN date('now') AND date('now', '+6 months')) expiring
-  FROM patents GROUP BY 1, 2 ORDER BY 1, 3 DESC
-`).all();
+const summary = db.prepare('SELECT applicant_type, legal_status, COUNT(*) n FROM patents GROUP BY 1, 2 ORDER BY 1, 3 DESC').all();
 console.table(summary);
