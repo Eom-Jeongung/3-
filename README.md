@@ -1,16 +1,62 @@
-# 특허 현황 대시보드 — 데모 v1 (가정 검증용 초안)
+# 특허 트렌드 센싱 대시보드 — PRD v2 구현 중
 
-천안형 AI 교육 과제2 · 스폰서사 LG디스플레이
+천안형 AI 교육 과제2 · 스폰서사 LG디스플레이 · 3팀
 
-LG디스플레이(자사)와 삼성디스플레이(경쟁사)의 특허를 KIPRIS 공개 데이터에서 가져와
-**만료일·상태별로 보여주는 대시보드**입니다. 기업 인터뷰 전에 우리 가정이 맞는지 확인하려고 만든
-**러프한 초안**이에요. 완성품이 아닙니다.
+LG디스플레이(자사)와 삼성디스플레이(경쟁사)의 공개 특허를 KIPRIS에서 받아 기술 분야별로 분류하고,
+**기간별 추이와 요약을 보여주는 트렌드 대시보드**입니다. 아직 만드는 중이에요.
+
+기업 인터뷰(2026-10-16) 후 방향이 "특허 만료 관리"에서 "기술 트렌드 파악"으로 바뀌었어요. 만료 임박 화면은 뺐습니다.
 
 **화면 구성**
 
-- 맨 위: 마지막 갱신 시각과 새로고침 버튼
-- 가운데: 특허 목록 표. 자사/경쟁사와 상태로 필터하고(**⏰ 만료임박만** 버튼 포함), 표 머리글을 눌러 정렬하고, 6개월 안에 만료되는 특허에는 배지가 붙어요. **행을 누르면 오른쪽에 상세 패널**(일정, IPC, 초록, 도면)이 열려요.
-- 아래: 자사와 경쟁사의 기술분야를 나란히 비교하는 막대
+- 맨 위: 메뉴, 마지막 갱신 시각, AI 질문, 새로고침 버튼
+- 홈(트렌드 메인): 기간(1~10년), 단위(연간/반기), 출원인을 골라 분야별 출원 추이를 자사와 경쟁사로 나란히 봐요. 최근 18개월은 미공개 출원이 빠져 음영으로 표시해요. 그 아래에 요약, 근거 건수와 증감률, 근거 특허, 최근 공개 동향이 나와요.
+- 분야 화면: 범례나 표의 분야를 누르면 1차 → 2차 → 3차로 내려가며 그 분야의 추이와 특허 목록을 봐요.
+- 특허 모아보기: 명칭·초록 검색, 출원인, 상태, 공개일, 기술 분야(1~3차)로 필터하고, 표 머리글을 눌러 정렬해요.
+- 특허 상세: 행을 누르면 열려요. 초록과 대표 청구항을 나란히 보고, 분류 결과와 근거를 확인해요. 청구항은 "청구항 불러오기"를 누를 때 KIPRIS에서 받아 저장해요 (건당 1회 호출).
+- AI 질문: 오른쪽 패널에서 질문해요. 숫자와 특허는 DB에서 가져오고 AI는 문장만 써요. AI 설정을 넣어야 동작해요.
+
+## 현재 진행도 (2026-11-03 기준)
+
+**데이터**
+
+- 전체 수집 완료: 85,575건 (자사 약 4.6만, 삼성디스플레이 약 3.9만)
+- 기술 분야 분류 완료 (팀 임시 기준 v0.1): IPC 85.3%, 키워드 1.2%, 미분류 13.4%. 최근 12개월 공개분의 미분류는 8.3%
+
+**PRD 대비 상태**
+
+| 화면 | 요구사항 | 상태 |
+|---|---|---|
+| 트렌드 메인 | 기간, 단위, 출원인 선택 | ✅ |
+| | 분야별 출원 추이 그래프, 자사·경쟁사 비교 | ✅ |
+| | 최근 18개월 음영과 안내 | ✅ |
+| | 트렌드 요약 | 🔺 DB 숫자로 만든 규칙 기반. AI 요약 전 |
+| | 근거 건수와 증감률 | ✅ |
+| 분야 드릴다운 | 1차 → 2차 → 3차, 추이 그래프, 특허 목록 | ✅ |
+| | IPC, 분류 근거 표시 | ✅ |
+| | AI 태그 | ❌ AI 분류 보정 전 |
+| 특허 상세 | 초록과 대표 청구항 나란히 | ✅ |
+| | 분류 결과와 근거 | ✅ |
+| | KIPRIS 원문 링크 | 🔺 KIPRIS 열기와 출원번호 복사. 특허별 직접 링크는 주소를 확인하지 못함 |
+| | 고정 형식 개별 요약 | ❌ AI 모델 필요 |
+
+**PRD에 없지만 추가한 기능**
+
+- 근거 특허 약 10건: 많이 늘어난 분야에서 건수가 가장 많이 늘어난 세부 기술의 특허를 최근 공개순으로 뽑아요. 중요도 순위가 아니라 규칙으로 뽑은 예시예요.
+- AI 질문: 코드는 완성했고 가짜 AI 서버로만 시험했어요. 실제 모델 시험이 남았고, 다른 팀원에게 인계했어요.
+
+**남은 일**
+
+1. 요약 모델 비교 (상위 모델, 경량 모델, EXAONE) 후 개별 요약과 트렌드 AI 요약 붙이기
+2. 담당자님 답변 반영: 외부 AI 허용 여부, 분류 기준(공정·장비 등), 경쟁사 범위, 예시 특허로 분류 정확도 측정
+3. 전체 DB를 천안 서버로 옮기기, 팀 PostgreSQL로 전환 (지금은 SQLite)
+4. 미국 특허(USPTO) 확장
+
+**알아둘 점**
+
+- 분류 대응표는 팀 문서에서 달라진 부분이 있어요. 5장 "분류 기준에서 달라진 점"을 보세요.
+- 1차 "마이크로LED"는 `H10H` 코드 기준이라 일반 무기 LED도 섞여 있어요. 본문에 "마이크로 LED"가 나오는 건 2,899건 중 85건이에요.
+- 3차 "기타" 비중이 커요. 3차 키워드는 담당자님 피드백으로 보강해야 해요.
 
 ---
 
@@ -35,11 +81,16 @@ LG디스플레이(자사)와 삼성디스플레이(경쟁사)의 특허를 KIPRI
 화면을 작은 조각(컴포넌트)으로 나눠서 만들고 조립해요. 이 대시보드는 이렇게 생겼어요.
 
 ```
-App (대시보드 전체)                       frontend/src/App.jsx
- ├─ FilterBar           필터 버튼           frontend/src/components/FilterBar.jsx
- ├─ PatentTable         특허 목록 표         frontend/src/components/PatentTable.jsx
- ├─ PatentDetail        행 클릭 시 상세 패널  frontend/src/components/PatentDetail.jsx
- └─ TechCategoryCompare 기술분야 비교 막대   frontend/src/components/TechCategoryCompare.jsx
+App (상단 메뉴·새로고침)                   frontend/src/App.jsx
+ ├─ HomePage            트렌드 메인          frontend/src/pages/HomePage.jsx
+ │   └─ TrendSection    설정·그래프·요약      frontend/src/components/TrendSection.jsx
+ │       └─ TrendChart  출원 추이 그래프      frontend/src/components/TrendChart.jsx
+ ├─ FieldPage           분야 드릴다운        frontend/src/pages/FieldPage.jsx
+ ├─ PatentsPage         특허 모아보기        frontend/src/pages/PatentsPage.jsx
+ │   ├─ FilterBar       검색과 필터          frontend/src/components/FilterBar.jsx
+ │   └─ PatentTable     특허 목록 표         frontend/src/components/PatentTable.jsx
+ ├─ PatentDetail        특허 상세 패널        frontend/src/components/PatentDetail.jsx
+ └─ AskPanel            AI 질문 패널         frontend/src/components/AskPanel.jsx
 ```
 
 React의 핵심은 **"상태(state)만 바꾸면 화면이 알아서 다시 그려진다"**는 점이에요.
@@ -50,17 +101,17 @@ React의 핵심은 **"상태(state)만 바꾸면 화면이 알아서 다시 그�
 ### 데이터가 흐르는 길
 
 ```
- [브라우저: React 화면]  ── /api/patents 요청 ──▶  [백엔드: Express 서버]  ──▶  [SQLite DB]
-   localhost:5173                                    localhost:4000                     ▲
-                                                                                         │ 새로고침 버튼을
-                                                     [KIPRIS Open API] ──────────────────┘ 누를 때만 호출
+ [브라우저: React 화면]  ── /api 요청 ──▶  [백엔드: Express 서버]  ──▶  [SQLite DB]
+   localhost:5173                            localhost:4000                     ▲
+                                                                                 │ 전체 수집, 새로고침,
+                                             [KIPRIS Open API] ──────────────────┘ 청구항 불러오기 때만 호출
 ```
 
-1. **수집**: 새로고침을 누르면 백엔드가 KIPRIS에서 특허 데이터를 받아 와요.
-2. **가공·저장**: 날짜 형식을 바꾸고, 만료예정일(출원일+20년)을 계산하고, 기술분야를 분류해서 DB에 저장해요. 바뀐 특허만 갱신합니다.
-3. **표시**: 화면이 백엔드에 목록을 요청하고, 받은 데이터로 표와 막대그래프를 그려요.
+1. **수집**: 처음 한 번 전체를 받고, 그 뒤로는 새로고침 버튼으로 새로 공개·등록된 특허만 받아요.
+2. **분류**: IPC와 키워드 대응표로 1·2·3차 기술 분야를 정해요. 원본과 분리해서 저장하고, 기준이 바뀌면 다시 계산해요.
+3. **표시**: 화면이 백엔드에 요청하고, DB에서 집계한 숫자로 그래프와 표를 그려요.
 
-> AI(LLM)는 아직 쓰지 않아요. PRD 계획대로 핵심 기능은 일반 코드로 만들고, LLM은 확장 기능에서만 쓸 예정입니다.
+> 트렌드 집계와 분류는 일반 코드로 만들고, AI(LLM)는 문장 작성과 요약에만 써요. 지금 AI 연결이 필요한 기능은 AI 질문뿐이고, AI 요약은 아직 없어요.
 
 ### 왜 Python이 아니라 JavaScript인가
 
@@ -87,7 +138,7 @@ Node.js 하나만 설치하면 서버, 화면 개발 도구(Vite), 라이브러�
 
 **5. 데모 범위에는 JavaScript로 충분해요**
 
-이번 데모가 하는 일은 KIPRIS 호출, 날짜 계산, DB 저장, 목록 조회, 필터와 정렬이에요. Python이 특별히 유리한 부분(대용량 데이터 분석, 머신러닝)은 아직 쓰지 않아요.
+이 프로젝트가 하는 일은 KIPRIS 호출, DB 저장, 분류, 집계, LLM API 호출이에요. Python이 특별히 유리한 부분(대용량 데이터 분석, 머신러닝)은 아직 쓰지 않아요.
 
 ### 비교
 
@@ -151,7 +202,7 @@ node -v
 1. [plus.kipris.or.kr](https://plus.kipris.or.kr)에 가입합니다.
 2. **「특허·실용 공개·등록공보」** 서비스를 장바구니에 담고, 무료 플랜으로 신청을 끝까지 완료합니다.
 3. 마이페이지에서 인증키를 복사합니다.
-4. `backend/.env` 파일을 만들고 아래 내용을 넣습니다. 팀원에게서 받은 `.env`가 있으면 그 파일을 그대로 넣어도 돼요.
+4. `backend/.env.example`을 복사해 `backend/.env`를 만들고 키를 넣습니다. 내 노트북에서는 `API_PORT=4000`으로 두세요.
 
 ```
 KIPRIS_API_KEY=여기에_인증키
@@ -159,7 +210,15 @@ API_PORT=4000
 DB_PATH=./data/patents.db
 ```
 
-> ⚠️ `.env`에는 비밀 키가 들어 있어서 GitHub에 올라가지 않도록 `.gitignore`에 넣어 뒀어요. 키를 채팅방이나 문서에 붙여넣지 마세요.
+AI 질문을 쓰려면 AI 설정도 넣습니다. 이 값들만 바꾸면 OpenRouter든 사내 AI 서버든 그대로 동작해요.
+
+```
+AI_BASE_URL=https://openrouter.ai/api/v1
+AI_API_KEY=여기에_키
+AI_MODEL=anthropic/claude-sonnet-5.5
+```
+
+> ⚠️ `.env`에는 비밀 키가 들어 있어서 GitHub에 올라가지 않도록 `.gitignore`에 넣어 뒀어요. 키를 채팅방이나 문서, 캡처에 올리지 마세요.
 
 ### 2-3. 라이브러리 설치와 DB 생성
 
@@ -169,13 +228,21 @@ VS Code에서 **이 폴더(PJ.2_DEMO)를 연 상태로** 터미널(`` Ctrl+` ``)
 npm run setup
 ```
 
-### 2-4. 처음 데이터 가져오기
+### 2-4. 처음 데이터 넣기
+
+**팀원에게서 DB 파일을 받았다면** `backend/data/patents.db`에 넣고 끝이에요. 분류 결과도 그 안에 들어 있어요. KIPRIS 무료 한도(월 1,000회)를 아끼려면 이 방법을 쓰세요.
+
+**DB 파일이 없다면** 전체 수집과 분류를 차례로 실행합니다.
 
 ```powershell
-npm run sync
+npm run collect --prefix backend
 ```
 
-`수집 100건 / 변경 100건`이 나오면 성공이에요.
+```powershell
+npm run classify --prefix backend
+```
+
+전체 수집은 KIPRIS를 약 200회 호출하니 **팀에서 한 번만** 실행하세요. 중간에 끊겨도 다시 실행하면 이어서 받아요.
 
 ---
 
@@ -200,7 +267,9 @@ npm run dev
 |---|---|
 | `npm run setup` | 처음 한 번: 라이브러리 설치와 DB 테이블 생성 |
 | `npm run dev` | 백엔드와 화면을 함께 실행 |
-| `npm run sync` | KIPRIS에서 데이터 수집 (화면의 새로고침 버튼과 같은 일) |
+| `npm run sync` | 새로 공개·등록된 특허만 받기 (화면의 새로고침 버튼과 같은 일, 보통 4회 호출) |
+| `npm run collect --prefix backend` | 전체 특허 수집 (처음 한 번, 약 200회 호출) |
+| `npm run classify --prefix backend` | 대응표(`backend/classification/*.csv`)를 DB에 넣고 전체 특허를 다시 분류 (KIPRIS 호출 없음) |
 
 ---
 
@@ -211,66 +280,85 @@ PJ.2_DEMO/
 ├─ package.json             루트 실행 명령 (setup / dev / sync)
 ├─ backend/                 서버 (Express + SQLite)
 │  ├─ .env                  API 키·포트 (비공개, 직접 만들어야 함)
-│  ├─ data/patents.db       DB 파일 (sync하면 생김)
-│  ├─ docs/kipris-sample.xml  KIPRIS 실제 응답 예시
-│  ├─ scripts/              수동 실행용 스크립트 (DB 생성, 수집, API 테스트)
+│  ├─ .env.example          .env 견본 (항목 이름만)
+│  ├─ data/patents.db       DB 파일 (GitHub에 안 올라감)
+│  ├─ classification/       분류 대응표 (ipc_map.csv, keyword_map.csv)
+│  ├─ sql/classification.sql  분류·청구항 테이블 정의
+│  ├─ scripts/              수동 실행용 스크립트 (DB 생성, 전체 수집, 새로고침, 재분류, API 테스트)
 │  └─ src/
 │     ├─ index.js           ★ 서버 시작점 (Python의 app.py 역할)
 │     ├─ db.js              DB 연결과 테이블 정의
-│     ├─ kipris.js          KIPRIS API 호출
-│     ├─ sync.js            수집 → 만료일 계산 → 분류 → DB 저장
-│     ├─ classify.js        기술분야 분류 규칙 (키워드·IPC)
+│     ├─ kipris.js          KIPRIS API 호출 (검색, 청구항)
+│     ├─ sync.js            새로고침: 새 특허만 받아 저장·분류
+│     ├─ classify.js        v1 임시 분류 (tech_category, 교체 예정)
+│     ├─ classification.js  기술 분야 분류기 (기준 v0.1, 결과는 classification 테이블)
+│     ├─ trendData.js       트렌드 집계 (AI 없이 DB만)
+│     ├─ ai.js              AI 호출 (OpenAI 호환 형식, 이 파일에만 둠)
+│     ├─ ask.js             AI 질문: 해석 → DB 조회 → 문장 작성·숫자 검사
 │     └─ routes/            API 주소별 처리
-│        ├─ patents.js        GET /api/patents (목록·필터·정렬), GET /api/patents/:id
+│        ├─ ask.js            POST /api/ask, GET /api/ask/status
+│        ├─ patents.js        GET /api/patents (목록·필터·정렬), GET /api/patents/:id, POST /api/patents/:id/claims
 │        ├─ sync.js           POST /api/sync (새로고침)
-│        └─ techCategories.js GET /api/tech-categories/compare (기술분야 비교)
+│        ├─ techCategories.js GET /api/tech-categories/compare (기술분야 비교, 지금 화면에서는 안 씀)
+│        └─ trends.js         GET /api/trends/series (출원 추이), GET /api/trends/overview (공개 동향)
 └─ frontend/                화면 (Vite + React)
    └─ src/
-      ├─ App.jsx            ★ 대시보드 전체 틀
+      ├─ App.jsx            ★ 상단 메뉴와 화면 전환
       ├─ index.css          색상·디자인
-      └─ components/        화면 조각들 (FilterBar, PatentTable, TechCategoryCompare)
+      ├─ pages/             화면 (HomePage 트렌드 메인, FieldPage 분야 드릴다운, PatentsPage 특허 모아보기)
+      ├─ hooks/             특허 목록을 나눠 받는 usePatentList
+      └─ components/        화면 조각들 (TrendSection, TrendChart, FilterBar, PatentTable, PatentDetail, AskPanel)
 ```
 
-### 자주 고칠 곳 (인터뷰 후 바로 바꿀 만한 것)
+### 자주 고칠 곳
 
 | 바꾸고 싶은 것 | 파일 | 찾을 곳 |
 |---|---|---|
-| 만료임박 기준 (지금 6개월) | `backend/src/routes/patents.js` | `EXPIRING_MONTHS = 6` |
-| 기술분야 분류명·키워드 | `backend/src/classify.js` | `TECH_RULES` |
+| 기술 분야 분류 기준 | `backend/classification/*.csv` | 고친 뒤 `npm run classify --prefix backend` |
 | 대상 회사 (자사/경쟁사) | `backend/src/kipris.js` | `APPLICANTS` |
-| 샘플 건수·구성 | `backend/src/sync.js` | `sampleBuckets()` |
+| 증감률을 표시할 최소 건수 (지금 30건) | `backend/src/trendData.js` | `MIN_COUNT` |
+| 근거 특허 건수·규칙 | `backend/src/trendData.js` | `selectEvidence` |
+| AI 모델 | `backend/.env` | `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` |
 | 색상 | `frontend/src/index.css` | 맨 위 `:root { ... }` |
 
 `backend/src`를 고치면 서버가 자동으로 다시 시작되고, `frontend/src`를 고치면 브라우저에 바로 반영돼요.
-KIPRIS 쪽 설정(회사, 키워드, 샘플)을 바꿨다면 새로고침 버튼이나 `npm run sync`로 데이터를 다시 받아야 해요.
+대상 회사를 바꿨다면 `npm run collect --prefix backend`로 데이터를 다시 받아야 해요.
 
 ---
 
-## 5. 데모 범위 (PRD 기준)
+## 5. 범위와 설계 메모 (PRD v2 기준)
 
-**포함**
+PRD v2의 핵심 기능은 기술 분야 분류, 트렌드 지표, 특허·트렌드 요약 세 가지예요. 진행 상태는 맨 위 "현재 진행도"를 보세요.
 
-- KIPRIS 실제 연동 (자사와 경쟁사 각 50건, 총 100건)
-- 특허 목록 표
-- 만료일·상태 정렬과 필터
-- 만료임박 강조
-- 자사 vs 경쟁사 기술분야 비교
+**하지 않는 것 (PRD)**
 
-**제외 (일부러 안 만듦)**
+- 만료 임박 알림, 심사청구·연차료 기한 관리
+- 공개 전 특허
+- 특허 검색 자체 (모아보기의 검색은 목록을 찾기 위한 보조 기능이에요)
+- 특허 침해·무효 같은 법적 판단
+- 사내 특허 DB 실제 연동
+- 미국 특허(USPTO)는 국내 완성 후 확장
 
-- 자동 갱신 스케줄러
-- 알림
-- 자연어 질의
-- 유사특허 플래그
-- 로그인
-- 엑셀 다운로드
-- PostgreSQL
-- 해외 특허
+### 날짜 기준
 
-### PRD에서 달라진 점
+- **출원 추이 그래프는 출원일 기준**이에요. PRD대로 기술이 언제 나왔는지 보여 주고, 아직 공개되지 않은 최근 18개월 구간은 음영으로 표시해요.
+- **최근 공개 동향 표는 공개일 기준**이에요. 최근 12개월을 이전 구간과 비교하지만, 공개된 특허는 대체로 1년 반쯤 전에 출원한 기술이에요.
+
+### 분류 기준에서 달라진 점
+
+팀 문서 "특허 분류 기준 v0.1"을 따르되, 아래는 문서와 달라요. 팀 확인이 필요해요.
+
+- **대응표:** 문서의 표를 옮겨 `backend/classification/`에 직접 만들었어요. 문서에 나온 CSV 파일은 받지 못했어요.
+- **대응표에 없는 첫 IPC:** 키워드로 추정하지 않고 미분류로 둬요. 추정하면 로봇 아암이 광학으로 가는 식의 오분류가 생겼어요.
+- **`H10K 59` 세부 코드 19줄 추가:** 예: `59/131`(배선)은 TFT 소자, `59/38`(컬러필터)은 광학, `59/40`(터치)은 설계. 어느 2차로 보낼지는 임시 판단이에요.
+- **대응표 4줄 추가:** `G09G 3`, `G06F 3`은 설계, `G09F 9`, `G06F 1`은 기구.
+- **동점 처리:** 1차는 공통, 2차는 미분류, 3차는 표에서 먼저 나온 항목으로 정했어요.
+- **키워드 비교:** 띄어쓰기와 대소문자를 무시해요.
+
+### 구현 중 알게 된 점
 
 - **출원인명:** KIPRIS에서 `LG디스플레이`로 검색하면 0건이 나와요. 등록된 표기가 `엘지디스플레이 주식회사`라서 `엘지디스플레이`로 검색합니다.
-- **스키마 컬럼 추가:** KIPRIS 실제 응답에 맞춰 `ipc_codes`, `register_number`, `open_date`, `drawing_url`을 추가했어요. 응답에 대표도면 이미지 URL도 들어 있었어요.
-- **기술분야 비교 방식:** 샘플 100건은 대부분 2006~2007년 LCD 특허라서 분류 결과가 98건 미분류였어요. 그래서 KIPRIS 전체 출원을 분야 키워드로 검색한 **건수**로 비교합니다. 이 결과는 `tech_category_stats` 테이블에 저장해요.
-- **환경변수 이름:** `PORT`를 `API_PORT`로 바꿨어요. 실행 환경이 `PORT`를 미리 정해두면 충돌이 났기 때문이에요.
-- **만료일 계산:** 출원일+20년(실용신안은 +10년)으로 단순 계산해요. 존속기간 연장과 연차료 미납으로 인한 조기 소멸은 반영하지 않았어요.
+- **청구항:** 목록 API에는 없고 상세 API에 있어요. 특허 1건당 1회 호출이라 전체를 미리 받지 않고, 상세에서 요청한 특허만 저장해요.
+- **환경변수 이름:** 포트 설정은 `API_PORT`를 먼저 보고, 없으면 `$PORT + 100`을 써요. 천안 서버 규칙에 맞춘 거예요.
+- **만료일:** 인터뷰에서 범위에서 빠져 화면에는 없어요. `expiry_date` 칸은 DB에 남아 있어요.
+- **v1 코드:** `backend/src/classify.js`, `routes/techCategories.js`, `tech_category_stats` 테이블은 v1에서 남은 것으로, 지금 화면에서는 쓰지 않아요.

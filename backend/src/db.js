@@ -37,6 +37,12 @@ export function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_patents_expiry ON patents (expiry_date);
     CREATE INDEX IF NOT EXISTS idx_patents_type_status ON patents (applicant_type, legal_status);
+    CREATE INDEX IF NOT EXISTS idx_patents_open_date ON patents (open_date); -- 트렌드 기간 집계, 목록 정렬용
+    CREATE INDEX IF NOT EXISTS idx_patents_application_date ON patents (application_date);
+    DROP INDEX IF EXISTS idx_patents_trend;
+    -- 분류와 묶어 집계할 때 초록이 든 본문을 읽지 않도록
+    CREATE INDEX IF NOT EXISTS idx_patents_covering ON patents (application_number, application_date, open_date, applicant_type);
+    CREATE INDEX IF NOT EXISTS idx_patents_registration_date ON patents (registration_date);
 
     CREATE TABLE IF NOT EXISTS sync_log (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,12 +72,18 @@ export function initSchema() {
       note      TEXT
     );
   `);
+  db.exec(fs.readFileSync(new URL('../sql/classification.sql', import.meta.url), 'utf8'));
 }
+
+// LIKE의 특수문자를 글자 그대로 찾도록 처리
+export const likePattern = (s) => `%${s.replace(/[\\%_]/g, '\\$&')}%`;
 
 // 이미 만들어진 DB에 나중에 추가한 컬럼 (CREATE TABLE IF NOT EXISTS는 기존 테이블을 바꾸지 않음)
 function migrate() {
   const cols = db.prepare('PRAGMA table_info(patents)').all().map((c) => c.name);
   if (!cols.includes('big_drawing_url')) db.exec('ALTER TABLE patents ADD COLUMN big_drawing_url TEXT');
+  const classificationCols = db.prepare('PRAGMA table_info(classification)').all().map((c) => c.name);
+  if (!classificationCols.includes('basis_detail')) db.exec('ALTER TABLE classification ADD COLUMN basis_detail TEXT');
 }
 
 // 다른 모듈이 import 시점에 prepare 하므로 연결 직후 스키마를 보장

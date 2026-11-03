@@ -23,7 +23,7 @@ export const STATUS_CODES = { 공개: 'A', 취하: 'C', 소멸: 'F', 포기: 'G'
 /**
  * @param {object} params applicant, applicationDate('YYYYMMDD~YYYYMMDD'), lastvalue, numOfRows, pageNo 등
  * @param {{ useCache?: boolean }} options
- * @returns {Promise<{ totalCount: number, items: object[] }>}
+ * @returns {Promise<{ totalCount: number, items: object[], fromCache: boolean }>}
  */
 export async function searchPatents(params, { useCache = true } = {}) {
   const key = process.env.KIPRIS_API_KEY;
@@ -33,7 +33,8 @@ export async function searchPatents(params, { useCache = true } = {}) {
   const cacheFile = path.join(CACHE_DIR, crypto.createHash('sha1').update(query.toString()).digest('hex') + '.xml');
 
   let xml;
-  if (useCache && fs.existsSync(cacheFile)) {
+  const fromCache = useCache && fs.existsSync(cacheFile);
+  if (fromCache) {
     xml = fs.readFileSync(cacheFile, 'utf8');
   } else {
     const res = await fetch(`${BASE_URL}?${query}&ServiceKey=${encodeURIComponent(key)}`);
@@ -52,5 +53,27 @@ export async function searchPatents(params, { useCache = true } = {}) {
   }
 
   const items = response.body?.items?.item ?? [];
-  return { totalCount: Number(response.count?.totalCount ?? 0), items };
+  // fromCache: 실제 KIPRIS 호출 없이 디스크에서 읽었는지 (호출 횟수 집계용)
+  return { totalCount: Number(response.count?.totalCount ?? 0), items, fromCache };
+}
+
+const DETAIL_URL = 'http://plus.kipris.or.kr/kipo-api/kipi/patUtiModInfoSearchSevice/getBibliographyDetailInfoSearch';
+const detailParser = new XMLParser({ parseTagValue: false, isArray: (name) => name === 'claimInfo' });
+
+/**
+ * 특허 1건의 청구항 (호출 1회를 쓰므로 받은 결과는 DB에 저장해서 쓴다)
+ * @returns {Promise<string[]>}
+ */
+export async function fetchClaims(applicationNumber) {
+  const key = process.env.KIPRIS_API_KEY;
+  if (!key) throw new Error('KIPRIS_API_KEY가 .env에 없습니다');
+  const query = new URLSearchParams({ applicationNumber });
+  const res = await fetch(`${DETAIL_URL}?${query}&ServiceKey=${encodeURIComponent(key)}`);
+  if (!res.ok) throw new Error(`KIPRIS HTTP ${res.status}`);
+  const { response } = detailParser.parse(await res.text());
+  if (response?.header?.successYN !== 'Y') {
+    throw new Error(`KIPRIS 오류 ${response?.header?.resultCode}: ${response?.header?.resultMsg}`);
+  }
+  const claims = response.body?.item?.claimInfoArray?.claimInfo ?? [];
+  return claims.map((c) => String(c.claim ?? '').trim()).filter(Boolean);
 }
