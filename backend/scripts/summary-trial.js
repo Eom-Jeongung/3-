@@ -19,12 +19,14 @@ if (!isAiConfigured()) {
 
 console.log(`요약 대상: ${scopeLabel(scope)}, ${scope.from}~${scope.to}년`);
 const s = await generateTrendSummary(scope);
-const { strangeNumbers, strangePatents, mixups, missingSections } = s.checks;
+const { strangeNumbers, strangePatents, mixups, unsupported = [], overreach = [], missingSections } = s.checks;
 const list = (a) => (a.length ? a.join(' / ') : '없음');
 const checkLines = [
   `- 자료에 없는 숫자: ${list(strangeNumbers)}`,
   `- 근거 목록에 없는 출원번호: ${list(strangePatents)}`,
   `- 다른 특허 내용이 섞였을 수 있는 인용: ${list(mixups)}`,
+  `- 초록에 없는 효과: ${list(unsupported)}`,
+  `- 과한 해석: ${list(overreach)}`,
   `- 빠진 칸(답이 잘렸을 수 있음): ${list(missingSections)}`,
 ];
 fs.writeFileSync(OUT, [
