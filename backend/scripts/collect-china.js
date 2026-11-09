@@ -1,4 +1,4 @@
-// 중국 경쟁사 전체 수집: BOE·CSOT·Tianma 출원을 회사마다 500건씩 받아 DB에 저장 (applicant_type 'china')
+// 중국 경쟁사 전체 수집: BOE·CSOT·Tianma·Visionox 출원을 회사마다 500건씩 받아 DB에 저장 (applicant_type 'china')
 // 실행: npm run collect-china --prefix backend   (건수·호출 수만 보려면 -- --dry)
 //
 // - LG·삼성 수집(collect-full.js)은 출원연도별로 나눠 부르지만, 중국 회사는 건수가 적어(회사당 1천 건 안팎)
