@@ -3,11 +3,12 @@ import FieldPicker, { scopeHref, scopeLabel } from '../components/FieldPicker.js
 import PatentDetail from '../components/PatentDetail.jsx'
 
 const COMPANY_OPTIONS = [
-  { value: '', label: '둘 다' },
+  { value: '', label: '전체' },
   { value: 'own', label: '자사' },
-  { value: 'competitor', label: '경쟁사' },
+  { value: 'competitor', label: '삼성' },
+  { value: 'china', label: '중국 4사' },
 ]
-const COMPANY_SHORT = { own: '자사', competitor: '경쟁사' }
+const COMPANY_SHORT = { own: '자사', competitor: '삼성', china: '중국' }
 const MONTH_OPTIONS = [12, 24, 36]
 const formatDate = (iso) => (iso ? iso.replaceAll('-', '.') : '-')
 const pct = (n) => `${n < 0.1 ? n.toFixed(2) : n.toFixed(1)}%`

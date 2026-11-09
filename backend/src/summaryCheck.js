@@ -9,7 +9,7 @@ const EFFECT_WORDS = ['신뢰성', '내구성', '수명', '광효율', '발광 �
 // 회사 의도나 산업 단계를 단정하는 말 (프롬프트에서 금지)
 const OVERREACH = ['성숙 단계', '성숙기', '전략', '주력', '집중 투자', '경쟁 심화', '본격화', '선점', '시장 점유', '시장 확대', '중단', '동력', '위축', '관심이 줄', '관심이 감소'];
 
-const STOP = new Set(['자사', '경쟁사', 'LG디스플레이', '삼성디스플레이', '중심', '출원', '특허', '기술', '구조', '분야', '증가', '감소',
+const STOP = new Set(['자사', '경쟁사', 'LG디스플레이', '삼성디스플레이', '중심', '중국', 'BOE', 'CSOT', 'Tianma', 'Visionox', '출원', '특허', '기술', '구조', '분야', '증가', '감소',
   '포함', '구현', '확보', '향상', '동시', '배치', '적용', '형성', '지속', '표시', '장치', '디스플레이', '방지', '개선', '강화', '최적화',
   '도모', '추구', '명세서', '발명', '실시예', '제공', '관한', '것으로', '상기', '포함하는', '위치하는', '배치되는', '있다']);
 const JOSA = /(으로|에서|하여|하는|되는|을|를|이|가|은|는|의|에|로|와|과|도|만|및|한|해|된|함|등)$/;
@@ -81,10 +81,12 @@ export function checkSummary(answer, statText, evidence) {
       const e = byNumber.get(m[0]);
       const foreign = termsOf(claim).filter((w) => isForeignTo(w, [e]));
       // 회사 표기: 설명 구간에 한쪽 회사만 나올 때만 본다 ("자사와 경쟁사 모두 …"는 비교 문장)
-      const saysOwn = /자사|LG/.test(claim);
-      const saysComp = /경쟁사|삼성/.test(claim);
-      const wrongCompany = saysOwn !== saysComp
-        && ((saysOwn && e.company.startsWith('경쟁사')) || (saysComp && e.company.startsWith('자사')));
+      const kinds = [
+        /자사|LG/.test(claim) && '자사',
+        /삼성|(?<!중국\s?)경쟁사/.test(claim) && '경쟁사',
+        /중국|BOE|CSOT|Tianma|Visionox/.test(claim) && '중국',
+      ].filter(Boolean);
+      const wrongCompany = kinds.length === 1 && !e.company.startsWith(kinds[0]);
       const missing = /해석/.test(line) ? [] : effectsMissing(claim, [e]); // 해석 문장은 추정이라 효과 검사에서 뺀다
       if (missing.length) unsupported.push(`${m[0]}: ${missing.join(', ')}`);
       if (foreign.length || wrongCompany) {

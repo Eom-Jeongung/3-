@@ -1,11 +1,12 @@
 // 트렌드 집계 (홈 화면과 AI 질문이 함께 쓴다). AI 없이 DB만으로 계산한다
 import { db } from './db.js';
+import { CHINA_APPLICANTS } from './kipris.js';
 
 const WINDOW_COUNT = 3; // 최근 12개월 + 비교용 이전 2개 구간
 export const MIN_COUNT = 30; // 건수가 적으면 몇 건 차이로 %가 크게 흔들려 증감을 내지 않는다
 const MOVER_LIMIT = 5; // 회사별로 보여 줄 세부 기술 수
 const UNCLASSIFIED = '미분류';
-const COMPANIES = ['own', 'competitor'];
+export const COMPANIES = ['own', 'competitor', 'china']; // china: 중국 경쟁사 4곳 합계 (BOE·CSOT·Tianma·Visionox)
 const CURRENT_VERSION = '(SELECT MAX(criteria_version) FROM classification)';
 
 // 공개일 구간 집계: 그 구간 특허만 먼저 고르고 출원번호로 분류를 찾는다
@@ -40,7 +41,7 @@ export function getWindows() {
     const from = ymd(addDays(addYears(end, -(i + 1)), 1));
     const rows = totals.all(from, to);
     const pick = (type) => rows.find((r) => r.applicant_type === type)?.n ?? 0;
-    return { from, to, own: pick('own'), competitor: pick('competitor') };
+    return { from, to, ...Object.fromEntries(COMPANIES.map((c) => [c, pick(c)])) };
   });
 }
 
@@ -61,7 +62,7 @@ export function countsByField({ level1, level2, level3 }, windows) {
       for (const c of COMPANIES) counts[c][i] = w[c];
       return;
     }
-    for (const { company, n } of stmt.all({ ...Object.fromEntries(levels), from: w.from, to: w.to })) if (counts[company]) counts[company][i] = n;
+    for (const { company, n } of stmt.all({ ...Object.fromEntries(levels), from: w.from, to: w.to })) counts[company][i] = n;
   });
   return counts;
 }
@@ -88,7 +89,6 @@ export function getOverview() {
   const topicMap = new Map();
   windows.forEach((w, i) => {
     for (const { company, level2, level3, n } of byField.all(w.from, w.to)) {
-      if (!COMPANIES.includes(company)) continue; // 중국 경쟁사는 아직 이 화면에 넣지 않았다
       if (level2 === UNCLASSIFIED) { unclassified[company][i] += n; continue; }
       addCount(fieldMap, level2, { level2 }, company, i, n);
       // '기타 ○○'는 어디에도 안 걸린 나머지라 기술 흐름으로 읽을 수 없어 세부 기술 순위에서 뺀다
@@ -97,7 +97,7 @@ export function getOverview() {
   });
 
   // 2차는 최근 12개월 건수가 많은 순으로
-  const recentTotal = (f) => f.own[0] + f.competitor[0];
+  const recentTotal = (f) => COMPANIES.reduce((s, c) => s + f[c][0], 0);
   const fields = [...fieldMap.values()].sort((a, b) => recentTotal(b) - recentTotal(a));
 
   // 회사별로 가장 많이 늘어난 세부 기술
@@ -174,6 +174,23 @@ function buildSummary(periods, groups, series, companies) {
   return { from: first.label, to: last.label, firstKey: first.key, lastKey: last.key, rows, highlights };
 }
 
+// 중국 경쟁사 회사별 구간 건수 (그래프는 4곳 합계라 표로 따로 보여 준다). 회사는 출원인 이름으로 가른다
+function chinaByCompany({ base, params, periodExpr, index, periods, startYear }) {
+  const caseExpr = `CASE ${CHINA_APPLICANTS.map((c, i) => `WHEN p.applicant_name LIKE @like${i} THEN '${c.company}'`).join(' ')} ELSE '기타' END`;
+  const likes = Object.fromEntries(CHINA_APPLICANTS.map((c, i) => [`like${i}`, `%${c.query}%`]));
+  const out = Object.fromEntries(CHINA_APPLICANTS.map((c) => [c.company, Array(periods.length).fill(0)]));
+  const rows = db.prepare(`
+    SELECT ${caseExpr} company, ${periodExpr} period, COUNT(*) n
+    ${base} AND p.applicant_type = 'china' AND p.application_date >= @start
+    GROUP BY 1, 2
+  `).all({ ...params, ...likes, start: `${startYear}-01-01` });
+  for (const { company, period, n } of rows) {
+    const i = index.get(period);
+    if (out[company] && i !== undefined) out[company][i] += n;
+  }
+  return out;
+}
+
 // '2024' → 2024년 전체, '2024-H1' → 상반기
 function periodRange(key) {
   const [year, half] = key.split('-');
@@ -183,7 +200,7 @@ function periodRange(key) {
 
 const EVIDENCE_LIMIT = 10;
 const TOPICS_PER_FIELD = 3;
-const COMPANY_NAMES = { own: '자사', competitor: '경쟁사' };
+const COMPANY_NAMES = { own: '자사', competitor: '삼성', china: '중국 4사' };
 
 /**
  * 요약의 근거 특허: 많이 늘어난 분야에서 어떤 세부 기술이 늘었는지 보여 주는 예시
@@ -306,6 +323,7 @@ export function getSeries({ years, unit, company, level1, level2, level3 }) {
   const summary = buildSummary(periods, groups, series, companies);
   return {
     groups, periods, series, companies, unit, years, cutoff, groupLevel, minCount: MIN_COUNT,
+    chinaByCompany: companies.includes('china') ? chinaByCompany({ base, params, periodExpr, index, periods, startYear }) : null,
     summary,
     evidence: selectEvidence(summary, scope, groupLevel),
   };

@@ -10,12 +10,13 @@ const formatAppNo = (n) => (n?.length === 13 ? `${n.slice(0, 2)}-${n.slice(2, 6)
 const YEAR_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const UNITS = [{ value: 'year', label: '연간' }, { value: 'half', label: '반기' }]
 const COMPANY_OPTIONS = [
-  { value: '', label: '둘 다' },
+  { value: '', label: '전체' },
   { value: 'own', label: '자사' },
-  { value: 'competitor', label: '경쟁사' },
+  { value: 'competitor', label: '삼성' },
+  { value: 'china', label: '중국 4사' },
 ]
-const COMPANY_NAMES = { own: '자사 (엘지디스플레이)', competitor: '경쟁사 (삼성디스플레이)' }
-const COMPANY_SHORT = { own: '자사', competitor: '경쟁사' }
+const COMPANY_NAMES = { own: '자사 (엘지디스플레이)', competitor: '경쟁사 (삼성디스플레이)', china: '중국 경쟁사 (BOE·CSOT·Tianma·Visionox 합계)' }
+const COMPANY_SHORT = { own: '자사', competitor: '삼성', china: '중국 4사' }
 const NOT_FIELD = ['미분류', '그 외']
 
 const formatCount = (n) => n.toLocaleString('ko-KR')
@@ -55,7 +56,10 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
   }, [years, unit, company, level1, level2, level3, refreshKey])
 
   const summary = data?.summary
-  const yMax = data ? chartMax(data) : 0
+  // 자사·삼성은 같은 눈금으로 비교하고, 건수가 훨씬 적은 중국 4사는 따로 눈금을 잡는다 (같은 눈금이면 바닥에 붙어 안 보인다)
+  const korean = data ? data.companies.filter((c) => c !== 'china') : []
+  const yMax = data && korean.length ? chartMax({ ...data, companies: korean }) : 0
+  const chinaMax = data?.companies.includes('china') ? chartMax({ ...data, companies: ['china'] }) : 0
   const canDrill = (group) => data?.groupLevel && !NOT_FIELD.includes(group)
 
   return (
@@ -100,14 +104,39 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
 
           <div className={`chart-grid-2 ${data.companies.length === 1 ? 'single' : ''}`}>
             {data.companies.map((c) => (
-              <TrendChart key={c} title={COMPANY_NAMES[c]} periods={data.periods} groups={data.groups} series={data.series[c]} yMax={yMax} />
+              <TrendChart key={c} title={`${COMPANY_NAMES[c]}${c === 'china' && korean.length ? ' · 눈금 다름' : ''}`} periods={data.periods} groups={data.groups} series={data.series[c]} yMax={(c === 'china' ? chinaMax : yMax) || 1} />
             ))}
           </div>
 
           <p className="footnote">
             출원일 기준이에요. 특허는 출원 후 보통 18개월 뒤 공개되어, {data.cutoff.replaceAll('-', '.')} 이후 출원은 아직 다 보이지 않아 음영으로 표시했어요.
-            두 그래프의 눈금은 같아요. 분류는 규칙 기반 자동 분류예요(무작위 검증 정확도 약 85%).
+            자사와 삼성 그래프는 눈금이 같고, 중국 4사는 건수가 훨씬 적어 눈금을 따로 잡았어요. 분류는 규칙 기반 자동 분류예요(무작위 검증 정확도 약 85%).
+            중국 4사는 한국에 낸 출원만이라 실제 출원 규모보다 작게 보여요.
           </p>
+
+          {data.chinaByCompany && (
+            <div className="table-wrap chart-table">
+              <table>
+                <caption>중국 경쟁사 회사별 출원 건수 (이 분야)</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">회사</th>
+                    {data.periods.map((p) => <th key={p.key} scope="col" className="num">{p.label}{p.incomplete ? ' *' : ''}</th>)}
+                    <th scope="col" className="num">합계</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(data.chinaByCompany).map(([name, counts]) => (
+                    <tr key={name}>
+                      <th scope="row">{name}</th>
+                      {counts.map((v, i) => <td key={data.periods[i].key} className="num">{formatCount(v)}</td>)}
+                      <td className="num">{formatCount(counts.reduce((a, b) => a + b, 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <button className="more-link" onClick={() => setShowTable((s) => !s)} aria-expanded={showTable}>
             {showTable ? '표 닫기' : '그래프 값을 표로 보기'}
