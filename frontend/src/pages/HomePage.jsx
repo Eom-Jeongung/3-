@@ -1,5 +1,4 @@
 import TrendSection from '../components/TrendSection.jsx'
-import SummaryExplorer from '../components/SummaryExplorer.jsx'
 
 const SERIES = [
   { key: 'own', label: '자사', tag: 'own' },
@@ -36,16 +35,12 @@ export default function HomePage({ overview, refreshKey }) {
       <header className="hero">
         <h1 className="page-title">트렌드 분석</h1>
         <p className="period">엘지디스플레이(자사) · 삼성디스플레이(경쟁사) 기술 분야별 특허 흐름</p>
-        <a className="hero-btn" href="#/patents">특허 모아보기 &gt;</a>
+        <a className="hero-btn" href="#/patents">특허 목록 &gt;</a>
       </header>
 
 
       <div className="page-body">
-        <SummaryExplorer />
-
-        <div className="card-gap">
-          <TrendSection refreshKey={refreshKey} showAiSummary={false} />
-        </div>
+        <TrendSection refreshKey={refreshKey} showAiSummary={false} />
 
         {fields.length > 0 && (
           <section className="card card-gap" aria-labelledby="fields-title">

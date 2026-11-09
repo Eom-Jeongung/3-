@@ -11,7 +11,7 @@ LG디스플레이(자사)와 경쟁사의 공개 특허를 KIPRIS에서 받아 �
 
 **화면 구성**
 
-- 맨 위: 메뉴, 마지막 갱신 시각, AI 질문(보류), 새로고침 버튼
+- 맨 위: 메뉴, 마지막 갱신 시각, 새로고침 버튼
 - 홈(트렌드 메인): 기간(1~10년), 단위(연간/반기), 출원인을 골라 분야별 출원 추이를 봐요. 최근 18개월은 미공개 출원이 빠져 음영으로 표시해요. 그 아래에 요약, 근거 건수와 증감률, 근거 특허, 최근 공개 동향이 나와요.
 - 분야 화면: 범례나 표의 분야를 누르면 1차 → 2차 → 3차로 내려가며 그 분야의 추이와 특허 목록을 봐요.
 - 특허 모아보기: 명칭·초록 검색, 출원인, 상태, 공개일, 기술 분야(1~3차)로 필터하고, 표 머리글을 눌러 정렬해요.
@@ -52,7 +52,7 @@ LG디스플레이(자사)와 경쟁사의 공개 특허를 KIPRIS에서 받아 �
 
 - 미국 특허(USPTO)와 패밀리 정보
 - 근거 특허 목록: 많이 늘어난 분야에서 건수가 가장 많이 늘어난 세부 기술의 특허를 최근 공개순으로 뽑은 예시예요. 중요도 순위는 아니고, 지금 화면에 있어요.
-- AI 질문: 코드는 있지만 잠깐 보류했어요. 가짜 AI 서버로만 시험했어요.
+- AI 질문: 필요 없다고 판단해 뺐어요 (2026-11-09).
 
 **알아둘 점**
 
@@ -101,7 +101,6 @@ App (상단 메뉴·새로고침)                   frontend/src/App.jsx
  │   ├─ FilterBar       검색과 필터          frontend/src/components/FilterBar.jsx
  │   └─ PatentTable     특허 목록 표         frontend/src/components/PatentTable.jsx
  ├─ PatentDetail        특허 상세 패널        frontend/src/components/PatentDetail.jsx
- └─ AskPanel            AI 질문 패널         frontend/src/components/AskPanel.jsx
 ```
 
 React의 핵심은 **"상태(state)만 바꾸면 화면이 알아서 다시 그려진다"**는 점이에요.
@@ -122,7 +121,7 @@ React의 핵심은 **"상태(state)만 바꾸면 화면이 알아서 다시 그�
 2. **분류**: IPC와 키워드 대응표로 1·2·3차 기술 분야를 정해요. 원본과 분리해서 저장하고, 기준이 바뀌면 다시 계산해요.
 3. **표시**: 화면이 백엔드에 요청하고, DB에서 집계한 숫자로 그래프와 표를 그려요.
 
-> 트렌드 집계와 분류는 일반 코드로 만들고, AI(LLM)는 문장 작성과 요약에만 써요. 지금 AI 연결이 필요한 기능은 AI 질문뿐이고, AI 요약은 아직 없어요.
+> 트렌드 집계와 분류는 일반 코드로 만들고, AI(LLM)는 문장 작성과 요약에만 써요. 지금 AI 연결이 필요한 기능은 AI 동향 요약뿐이에요.
 
 ### 왜 Python이 아니라 JavaScript인가
 
@@ -283,7 +282,7 @@ npm run dev
 | `npm run sync` | 새로 공개·등록된 특허만 받기 (화면의 새로고침 버튼과 같은 일, 보통 4회 호출) |
 | `npm run collect --prefix backend` | 전체 특허 수집 (처음 한 번, 약 200회 호출) |
 | `npm run classify --prefix backend` | 대응표(`backend/classification/*.csv`)를 DB에 넣고 전체 특허를 다시 분류 (KIPRIS 호출 없음) |
-| `npm run ai-usage --prefix backend` | 최근 30일 AI 호출 수·실패 수·토큰 수 보기 (기록은 DB의 `ai_calls`, `ask_log` 테이블) |
+| `npm run ai-usage --prefix backend` | 최근 30일 AI 호출 수·실패 수·토큰 수 보기 (기록은 DB의 `ai_calls` 테이블) |
 | `npm run build` | 시연·배포용 화면 만들기 (`frontend/dist`) |
 | `npm start` | 시연·배포용 실행: 백엔드 하나가 API와 빌드된 화면을 같이 띄움 |
 
@@ -325,9 +324,7 @@ PJ.2_DEMO/
 │     ├─ classification.js  기술 분야 분류기 (기준 v0.1, 결과는 classification 테이블)
 │     ├─ trendData.js       트렌드 집계 (AI 없이 DB만)
 │     ├─ ai.js              AI 호출 (OpenAI 호환 형식, 이 파일에만 둠)
-│     ├─ ask.js             AI 질문: 해석 → DB 조회 → 문장 작성·숫자 검사
 │     └─ routes/            API 주소별 처리
-│        ├─ ask.js            POST /api/ask, GET /api/ask/status
 │        ├─ patents.js        GET /api/patents (목록·필터·정렬), GET /api/patents/:id, POST /api/patents/:id/claims
 │        ├─ sync.js           POST /api/sync (새로고침)
 │        ├─ techCategories.js GET /api/tech-categories/compare (기술분야 비교, 지금 화면에서는 안 씀)
@@ -338,7 +335,7 @@ PJ.2_DEMO/
       ├─ index.css          색상·디자인
       ├─ pages/             화면 (HomePage 트렌드 메인, FieldPage 분야 드릴다운, PatentsPage 특허 모아보기)
       ├─ hooks/             특허 목록을 나눠 받는 usePatentList
-      └─ components/        화면 조각들 (TrendSection, TrendChart, FilterBar, PatentTable, PatentDetail, AskPanel)
+      └─ components/        화면 조각들 (TrendSection, TrendChart, FilterBar, PatentTable, PatentDetail, AiSummaryPanel, SummaryExplorer)
 ```
 
 ### 자주 고칠 곳

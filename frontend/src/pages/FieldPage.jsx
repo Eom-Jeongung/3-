@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import PatentDetail from '../components/PatentDetail.jsx'
 import PatentTable from '../components/PatentTable.jsx'
+import FieldPicker, { scopeHref } from '../components/FieldPicker.jsx'
 import TrendSection from '../components/TrendSection.jsx'
 import { usePatentList } from '../hooks/usePatentList.js'
 
 const hrefOf = (levels) => `#/field?${new URLSearchParams(levels)}`
 
-// 분야 드릴다운: 고른 분야의 추이와 특허 목록. 그래프 범례나 표의 분야를 누르면 한 단계 더 내려간다
+// 기술 분야별 분석: 고른 분야의 추이와 특허 목록. 위 선택 칸으로 고르거나, 그래프 범례·표의 분야를 누르면 한 단계 더 내려간다
 export default function FieldPage({ scope, refreshKey }) {
   const [sort, setSort] = useState({ key: 'open_date', order: 'desc' })
   const [selectedId, setSelectedId] = useState(null)
@@ -28,7 +29,7 @@ export default function FieldPage({ scope, refreshKey }) {
       <header className="hero hero-sm">
         <h1 className="page-title">{level3 ?? level2 ?? level1 ?? '기술 분야'}</h1>
         <nav className="breadcrumb" aria-label="분야 경로">
-          <a href="#/">전체</a>
+          <a href="#/field">전체</a>
           {crumbs.map((c) => (
             <span key={c.label}>
               {' › '}
@@ -39,7 +40,17 @@ export default function FieldPage({ scope, refreshKey }) {
       </header>
 
       <div className="page-body">
-        <TrendSection scope={scope} refreshKey={refreshKey} />
+        <section className="card" aria-label="분야 선택">
+          <div className="trend-controls">
+            <FieldPicker scope={scope} onChange={(s) => { window.location.hash = scopeHref('field', s) }} />
+            <a className="more-link explorer-link" href={scopeHref('summary', scope)}>이 분야 AI 동향 요약 →</a>
+            <a className="more-link" href={scopeHref('emerging', scope)}>이 분야 급증 용어 →</a>
+          </div>
+        </section>
+
+        <div className="card-gap">
+          <TrendSection scope={scope} refreshKey={refreshKey} showAiSummary={false} />
+        </div>
 
         <section className="card card-gap" aria-labelledby="field-patents-title">
           <h2 id="field-patents-title" className="card-title">이 분야의 특허</h2>

@@ -347,45 +347,6 @@ tbody tr:last-child td { border-bottom: 0; }
 .muted { color: var(--faint); font-size: 12px; }
 .footnote { color: var(--faint); font-size: 12px; margin: 16px 0 0; line-height: 1.5; }
 
-/* ---- AI 질문 패널 (상단 바 아래 오른쪽) ---- */
-.sync-box .ask-toggle { background: var(--nav-marker); border-color: var(--nav-marker); }
-.sync-box .ask-toggle:hover { background: #fff; border-color: #fff; color: #1f1f21; }
-.ask-panel {
-  position: fixed; top: 72px; right: 0; bottom: 0; z-index: 45; width: min(460px, 100%);
-  display: flex; flex-direction: column; background: var(--surface);
-  border-left: 1px solid var(--hairline); box-shadow: var(--shadow-pop);
-}
-.ask-head { position: relative; padding: 18px 20px; border-bottom: 1px solid var(--hairline); }
-.ask-head h2 { margin: 0; font-size: 19px; font-weight: 700; }
-.ask-head .drawer-close { top: 14px; }
-.ask-log { flex: 1; overflow-y: auto; padding: 16px 20px; }
-.ask-intro p { margin: 0 0 14px; color: var(--muted); }
-.ask-example {
-  display: block; width: 100%; margin-bottom: 8px; padding: 10px 12px; text-align: left;
-  background: var(--surface); border: 1px solid var(--hairline); font-size: 14px; transition: border-color 0.15s, color 0.15s;
-}
-.ask-example:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.ask-turn { padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--hairline); }
-.ask-turn:last-of-type { border-bottom: 0; margin-bottom: 0; }
-.ask-question { margin: 0 0 10px; font-weight: 700; }
-.ask-answer { margin: 0 0 10px; line-height: 1.65; white-space: pre-wrap; }
-.ask-note { margin: 6px 0; color: var(--muted); font-size: 12px; }
-.ask-evidence h3 { margin: 12px 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
-.ask-table { min-width: 0; font-size: 13px; margin-bottom: 8px; }
-.ask-table caption { caption-side: top; text-align: left; color: var(--muted); font-size: 12px; padding-bottom: 4px; }
-.ask-table th, .ask-table td { padding: 6px 6px; font-size: 12px; }
-.ask-table tbody th { font-weight: 600; color: var(--text); }
-.ask-patents { list-style: none; margin: 0; padding: 0; }
-.ask-patents li { padding: 8px 0; border-bottom: 1px solid var(--hairline); }
-.ask-patents button { display: block; padding: 0; border: 0; background: none; text-align: left; font-size: 14px; }
-.ask-patents button:hover { color: var(--accent); text-decoration: underline; }
-.ask-form { display: flex; gap: 8px; padding: 12px 20px 6px; border-top: 1px solid var(--hairline); }
-.ask-form .filter-input { flex: 1; min-width: 0; }
-.ask-form button { padding: 6px 16px; background: var(--accent); border: 1px solid var(--accent); color: #fff; font-size: 14px; }
-.ask-form button:disabled { opacity: 0.5; cursor: not-allowed; }
-.ask-remaining { padding: 0 20px 10px; margin: 2px 0 0; }
-@media (prefers-color-scheme: dark) { .ask-form button { color: #111; } }
-
 /* ---- 특허 상세 패널 (오른쪽에서 열리는 시트) ---- */
 .drawer-backdrop {
   position: fixed; inset: 0; background: var(--scrim); z-index: 50;
@@ -458,7 +419,6 @@ tbody tr:last-child td { border-bottom: 0; }
 
 @media (max-width: 600px) {
   .topbar { height: 60px; }
-  .ask-panel { top: 60px; }
   .topbar-inner, .page-body, .shortcuts { padding-left: 16px; padding-right: 16px; }
   .topbar-inner { gap: 8px; }
   .brand { display: none; }
@@ -499,3 +459,5 @@ tbody tr:last-child td { border-bottom: 0; }
 .period-picker { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .ai-summary-head h3 { margin-right: 8px; }
 .explorer-link { margin-left: auto; font-size: 14px; }
+.emerging-example { display: block; font-family: inherit; text-align: left; margin: 2px 0; text-decoration: none; }
+.emerging-example:hover { text-decoration: underline; }

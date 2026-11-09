@@ -8,7 +8,6 @@ import patentsRouter from './routes/patents.js';
 import syncRouter from './routes/sync.js';
 import techCategoriesRouter from './routes/techCategories.js';
 import trendsRouter from './routes/trends.js';
-import askRouter from './routes/ask.js';
 import summariesRouter from './routes/summaries.js';
 import { startScheduler } from './scheduler.js';
 
@@ -21,7 +20,6 @@ app.use('/api/patents', patentsRouter);
 app.use('/api/sync', syncRouter);
 app.use('/api/tech-categories', techCategoriesRouter);
 app.use('/api/trends', trendsRouter);
-app.use('/api/ask', askRouter);
 app.use('/api/summaries', summariesRouter);
 
 // 배포용: npm run build로 만든 화면(frontend/dist)이 있으면 이 서버가 같이 띄운다
