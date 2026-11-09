@@ -153,7 +153,40 @@ const monthsBefore = (iso, months) => {
  *   dateField?: 'open_date'|'application_date', recentFrom?: string, pastFrom?: string}} opts
  *   dateField·recentFrom·pastFrom: 동향 요약처럼 출원 기간으로 볼 때 (예: 과거 2022-01-01~, 최근 2024-01-01~ref)
  */
-export function burstTerms({
+// 특허마다 뽑은 용어를 기억해 둔다 (전체 특허를 매번 다시 자르면 30초 가까이 걸려서, 두 번째부터는 1~2초)
+// 명칭·초록이 바뀌면 다시 뽑는다
+const termCache = new Map(); // 출원번호 -> { text, keys, phrases }
+function cachedTerms(d) {
+  const text = `${d.title ?? ''} ${d.abstract ?? ''}`;
+  const hit = termCache.get(d.num);
+  if (hit && hit.text === text) return hit;
+  const surface = new Map();
+  const keys = extractTerms(text, surface);
+  const phrases = [];
+  for (const [k, m] of surface) for (const [phrase, n] of m) for (let i = 0; i < n; i++) phrases.push([k, phrase]);
+  const entry = { text, keys, phrases };
+  termCache.set(d.num, entry);
+  return entry;
+}
+
+// 같은 조건의 결과를 기억해 둔다. 특허가 새로 들어오거나 분류 기준이 바뀌면 다시 계산한다
+const resultCache = new Map();
+const dataStamp = () => JSON.stringify(db.prepare(`
+  SELECT (SELECT COUNT(*) FROM patents) n, (SELECT MAX(open_date) FROM patents) d, (SELECT MAX(criteria_version) FROM classification) v
+`).get());
+
+export function burstTerms(opts = {}) {
+  const k = JSON.stringify(opts);
+  const stamp = dataStamp();
+  const hit = resultCache.get(k);
+  if (hit && hit.stamp === stamp) return hit.result;
+  const result = computeBurstTerms(opts);
+  if (resultCache.size > 300) resultCache.clear();
+  resultCache.set(k, { stamp, result });
+  return result;
+}
+
+function computeBurstTerms({
   applicant = 'all', level1 = '', level2 = '', level3 = '', recentMonths = 24, pastMonths = 48, ref = '',
   dateField = 'open_date', recentFrom = '', pastFrom = '',
 } = {}) {
@@ -165,10 +198,10 @@ export function burstTerms({
   if (level3) { where.push('c.level3 = @level3'); params.level3 = level3; }
   const dateCol = dateField === 'application_date' ? 'p.application_date' : 'p.open_date';
   const rows = db.prepare(`
-    SELECT p.application_number num, p.title, p.abstract, p.applicant_type type, ${dateCol} pub
+    SELECT p.id, p.application_number num, p.title, p.abstract, p.applicant_type type, ${dateCol} pub
     FROM patents p
-    LEFT JOIN classification c ON c.application_number = p.application_number
-      AND c.is_primary + 0 = 1 AND c.criteria_version || '' = (SELECT MAX(criteria_version) FROM classification)
+    ${level1 || level2 || level3 ? `JOIN classification c ON c.application_number = p.application_number
+      AND c.is_primary + 0 = 1 AND c.criteria_version || '' = (SELECT MAX(criteria_version) FROM classification)` : ''}
     WHERE ${dateCol} IS NOT NULL ${where.length ? `AND ${where.join(' AND ')}` : ''}
   `).all(params);
 
@@ -191,11 +224,19 @@ export function burstTerms({
   const past = docs.filter((d) => d.pub >= pastStart && d.pub < recentStart);
 
   const surface = new Map();
-  const recentSets = recent.map((d) => ({ terms: extractTerms(`${d.title ?? ''} ${d.abstract ?? ''}`, surface), d }));
+  const recentSets = recent.map((d) => {
+    const { keys, phrases } = cachedTerms(d);
+    for (const [k, phrase] of phrases) {
+      const m = surface.get(k) ?? new Map();
+      m.set(phrase, (m.get(phrase) ?? 0) + 1);
+      surface.set(k, m);
+    }
+    return { terms: keys, d };
+  });
   const recentCounts = new Map();
   for (const { terms } of recentSets) for (const t of terms) recentCounts.set(t, (recentCounts.get(t) ?? 0) + 1);
   const pastCounts = new Map();
-  for (const d of past) for (const t of extractTerms(`${d.title ?? ''} ${d.abstract ?? ''}`)) pastCounts.set(t, (pastCounts.get(t) ?? 0) + 1);
+  for (const d of past) for (const t of cachedTerms(d).keys) pastCounts.set(t, (pastCounts.get(t) ?? 0) + 1);
 
   const n1 = recent.length, n2 = past.length, nAll = n1 + n2;
   const eps = PARAMS.smoothing;
@@ -220,7 +261,7 @@ export function burstTerms({
   const display = (k) => [...(surface.get(k) ?? new Map([[k, 1]]))].sort((x, y) => y[1] - x[1])[0][0];
   for (const r of out) {
     const hits = recentSets.filter((s) => s.terms.has(r.term)).map((s) => s.d).sort((x, y) => (x.pub < y.pub ? 1 : -1));
-    r.examples = hits.slice(0, PARAMS.samples).map((d) => ({ applicationNumber: d.num, title: d.title }));
+    r.examples = hits.slice(0, PARAMS.samples).map((d) => ({ id: d.id, applicationNumber: d.num, title: d.title, type: d.type, date: d.pub }));
     r.related = r.related.slice(0, 8).map(display);
     r.term = display(r.term);
   }

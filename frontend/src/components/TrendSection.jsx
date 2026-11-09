@@ -60,7 +60,7 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
 
   return (
     <section className="card" aria-labelledby="trend-title">
-      <h2 id="trend-title" className="card-title">분야별 출원 추이</h2>
+      <h2 id="trend-title" className="card-title">{[level1, level2, level3].filter(Boolean).join(' › ') || '전체 분야'} 출원 추이</h2>
 
       <div className="trend-controls">
         <label className="filter-group">

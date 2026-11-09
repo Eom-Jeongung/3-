@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useState } from 'react'
-import AskPanel from './components/AskPanel.jsx'
-import PatentDetail from './components/PatentDetail.jsx'
+import EmergingPage from './pages/EmergingPage.jsx'
 import FieldPage from './pages/FieldPage.jsx'
 import HomePage from './pages/HomePage.jsx'
 import PatentsPage from './pages/PatentsPage.jsx'
+import SummaryPage from './pages/SummaryPage.jsx'
 
 const formatDateTime = (iso) =>
   iso ? new Date(iso).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' }) : '-'
 
 const MENUS = [
   { route: 'home', href: '#/', label: '홈' },
-  { route: 'patents', href: '#/patents', label: '특허 모아보기' },
+  { route: 'field', href: '#/field', label: '기술 분야별 분석' },
+  { route: 'summary', href: '#/summary', label: 'AI 동향 요약' },
+  { route: 'emerging', href: '#/emerging', label: '신기술 탐지' },
+  { route: 'patents', href: '#/patents', label: '특허 목록' },
 ]
 
 const routeOf = (hash) => {
   if (hash.startsWith('#/patents')) return 'patents'
   if (hash.startsWith('#/field')) return 'field'
+  if (hash.startsWith('#/summary')) return 'summary'
+  if (hash.startsWith('#/emerging')) return 'emerging'
   return 'home'
 }
 // #/field?level1=OLED&level2=설계 → { level1: 'OLED', level2: '설계' }
@@ -29,11 +34,6 @@ export default function App() {
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
-  const [askOpen, setAskOpen] = useState(false)
-  const [askUsed, setAskUsed] = useState(false)
-  const [askPatentId, setAskPatentId] = useState(null) // AI 질문의 근거 특허를 눌렀을 때 여는 상세
-
-  const closeAsk = useCallback(() => setAskOpen(false), [])
 
   useEffect(() => {
     const onHashChange = () => {
@@ -91,7 +91,6 @@ export default function App() {
           <div className="sync-box">
             {syncMsg && <span className="sync-msg" role="status">{syncMsg}</span>}
             <span className="sync-time">마지막 갱신 <strong>{formatDateTime(overview?.lastSyncedAt)}</strong></span>
-            <button className="ask-toggle" onClick={() => { setAskUsed(true); setAskOpen((o) => !o) }} aria-expanded={askOpen}>AI 질문</button>
             <button onClick={handleSync} disabled={syncing}>
               {syncing ? '갱신 중…' : '새로고침'}
             </button>
@@ -104,16 +103,10 @@ export default function App() {
         {/* 메뉴를 오가도 모아보기의 필터·펼친 목록이 유지되도록 화면을 지우지 않고 숨긴다 */}
         <div hidden={route !== 'home'}><HomePage overview={overview} refreshKey={refreshKey} /></div>
         {route === 'field' && <FieldPage key={hash} scope={scopeOf(hash)} refreshKey={refreshKey} />}
+        {route === 'summary' && <SummaryPage scope={scopeOf(hash)} />}
+        {route === 'emerging' && <EmergingPage scope={scopeOf(hash)} refreshKey={refreshKey} />}
         <div hidden={route !== 'patents'}><PatentsPage refreshKey={refreshKey} /></div>
       </main>
-
-      {/* 처음 열 때 만들고, 닫아도 대화가 남도록 지우지 않고 숨긴다 */}
-      {askUsed && (
-        <div hidden={!askOpen}>
-          <AskPanel open={askOpen} onClose={closeAsk} onSelectPatent={setAskPatentId} />
-        </div>
-      )}
-      {askPatentId && <PatentDetail id={askPatentId} onClose={() => setAskPatentId(null)} />}
     </>
   )
 }

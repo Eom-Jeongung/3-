@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import { db } from '../db.js';
 import { getOverview, getSeries } from '../trendData.js';
+import { burstTerms } from '../emerging.js';
 
 const router = Router();
 
@@ -19,6 +20,21 @@ router.get('/series', (req, res) => {
   if (!['year', 'half'].includes(unit)) return res.status(400).json({ error: 'unit은 year 또는 half' });
   if (company && !['own', 'competitor'].includes(company)) return res.status(400).json({ error: 'company는 own 또는 competitor' });
   res.json(getSeries({ years, unit, company, level1, level2, level3 }));
+});
+
+// GET /api/trends/emerging?company=own|competitor&level1=&level2=&level3=&months=24
+// 신기술 탐지: 최근 months개월(공개일 기준)에 그 전 4년보다 눈에 띄게 많이 나온 용어. AI 없이 계산한다
+router.get('/emerging', (req, res) => {
+  const { company, level1 = '', level2 = '', level3 = '' } = req.query;
+  const months = Number(req.query.months ?? 24);
+  if (![12, 24, 36].includes(months)) return res.status(400).json({ error: 'months는 12, 24, 36' });
+  if (company && !['own', 'competitor'].includes(company)) return res.status(400).json({ error: 'company는 own 또는 competitor' });
+  const r = burstTerms({ applicant: company || 'all', level1, level2, level3, recentMonths: months });
+  res.json({
+    ref: r.ref, recentStart: r.recentStart, pastStart: r.pastStart, recent: r.recent, past: r.past,
+    rows: r.rows.map(({ term, recentDocs, pastDocs, recentPct, pastPct, growth, isNew, related, examples }) =>
+      ({ term, recentDocs, pastDocs, recentPct, pastPct, growth, isNew, related, examples })),
+  });
 });
 
 export default router;
