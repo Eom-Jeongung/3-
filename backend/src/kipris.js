@@ -23,6 +23,7 @@ export const CHINA_APPLICANTS = [
   { company: 'BOE', query: '보에 테크놀로지', match: /보에 ?테크놀로지|비오이/ },
   { company: 'CSOT', query: '차이나 스타 옵토일렉트로닉스', match: /차이나 ?스타 ?옵토일렉트로닉스/ },
   { company: 'Tianma', query: '티안마', match: /티안마/ },
+  { company: 'Visionox', query: '비젼녹스', match: /비젼녹스/ }, // 쿤산 고-비젼녹스, 허페이 비젼녹스 등
 ];
 
 /** 출원인 이름 → 중국 경쟁사 이름 (아니면 null) */
