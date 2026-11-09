@@ -30,7 +30,7 @@ export default function FilterBar({ filters, onChange, statuses, classification 
     onChange({ ...filters, statuses: next })
   }
 
-  // 위 단계를 고르면 그 아래 선택지만 남긴다 (예: OLED 소자 2차는 1차가 OLED일 때만)
+  // 위 단계를 고르면 그 아래 선택지만 남긴다 (예: 1차를 LCD로 고르면 LCD 특허가 있는 2차만)
   const level2Rows = classification.filter((r) => !filters.level1 || r.level1 === filters.level1)
   const level3Rows = level2Rows.filter((r) => !filters.level2 || r.level2 === filters.level2)
   const techLevels = [
