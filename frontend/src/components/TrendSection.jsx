@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import PatentDetail from './PatentDetail.jsx'
 import TrendChart, { chartMax, seriesColor } from './TrendChart.jsx'
+import AiSummaryPanel from './AiSummaryPanel.jsx'
 
 const EVIDENCE_COLUMNS = ['출원번호', '발명의 명칭', '출원인', '공개일', '상태', '선정 이유']
 // 1020230116992 -> 10-2023-0116992
@@ -29,7 +30,7 @@ export function fieldHref(scope, groupLevel, group) {
 }
 
 // 기간·단위·출원인 설정, 분야별 출원 추이 그래프, 요약과 근거 수치 (트렌드 메인과 분야 화면이 함께 쓴다)
-export default function TrendSection({ scope = {}, refreshKey }) {
+export default function TrendSection({ scope = {}, refreshKey, showAiSummary = true }) {
   const [years, setYears] = useState(5)
   const [unit, setUnit] = useState('year')
   const [company, setCompany] = useState('')
@@ -105,7 +106,7 @@ export default function TrendSection({ scope = {}, refreshKey }) {
 
           <p className="footnote">
             출원일 기준이에요. 특허는 출원 후 보통 18개월 뒤 공개되어, {data.cutoff.replaceAll('-', '.')} 이후 출원은 아직 다 보이지 않아 음영으로 표시했어요.
-            두 그래프의 눈금은 같아요. 분류는 임시 기준 v0.1이에요.
+            두 그래프의 눈금은 같아요. 분류는 규칙 기반 자동 분류예요(무작위 검증 정확도 약 85%).
           </p>
 
           <button className="more-link" onClick={() => setShowTable((s) => !s)} aria-expanded={showTable}>
@@ -135,9 +136,11 @@ export default function TrendSection({ scope = {}, refreshKey }) {
             </div>
           )}
 
+          {showAiSummary && <AiSummaryPanel scope={scope} onOpenPatent={setSelectedId} />}
+
           <div className="trend-summary">
             <div className="summary-box">
-              <h3>트렌드 요약</h3>
+              <h3>증감 요약</h3>
               {!summary && <p className="placeholder-text">이 기간에는 공개가 끝난 구간이 부족해서 증감을 말하기 어려워요. 기간을 3년 이상으로 늘려 보세요.</p>}
               {summary && summary.highlights.length === 0 && <p className="placeholder-text">{summary.from}부터 {summary.to}까지 크게 움직인 분야가 없어요.</p>}
               {summary && summary.highlights.length > 0 && (
@@ -149,7 +152,7 @@ export default function TrendSection({ scope = {}, refreshKey }) {
                   ))}
                 </ul>
               )}
-              <p className="ask-note">DB 숫자로 만든 규칙 기반 요약이에요. AI 요약은 모델 선정 후 이 자리에 들어가요.</p>
+              <p className="ask-note">DB 숫자로 만든 규칙 기반 요약이에요. 그래프에서 고른 기간 기준이에요.</p>
             </div>
 
             {summary && (

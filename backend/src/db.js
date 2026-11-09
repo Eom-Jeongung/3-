@@ -64,6 +64,51 @@ export function initSchema() {
       PRIMARY KEY (tech_category, applicant_type)
     );
 
+    -- AI 호출 기록: 크레딧이 어디에 쓰였는지 보려고 남긴다 (질문·답변 내용은 ask_log에)
+    CREATE TABLE IF NOT EXISTS ai_calls (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      called_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      purpose           TEXT NOT NULL,   -- ask-plan(질문 해석), ask-answer(답변 작성) 등
+      host              TEXT,            -- AI_BASE_URL의 주소 부분 (키는 저장하지 않음)
+      model             TEXT NOT NULL,
+      prompt_tokens     INTEGER,         -- AI 서버가 알려준 경우만
+      completion_tokens INTEGER,
+      elapsed_ms        INTEGER NOT NULL,
+      error             TEXT             -- 성공이면 NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_calls_called_at ON ai_calls (called_at);
+
+    -- AI 질문 기록: 하루 한도 계산과 이상한 답이 나왔을 때 원인 찾기용
+    CREATE TABLE IF NOT EXISTS ask_log (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      asked_at TEXT NOT NULL DEFAULT (datetime('now')),
+      question TEXT NOT NULL,
+      plan     TEXT,                     -- AI가 해석한 질문 (JSON)
+      answer   TEXT,
+      source   TEXT,                     -- ai(AI 문장) / template(조회 결과 그대로) / none(답할 수 없는 질문)
+      error    TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_ask_log_asked_at ON ask_log (asked_at);
+
+    -- AI 동향 요약 (trendSummary.js). 같은 범위·기간도 새 행으로 쌓아 이전 요약과 비교한다
+    CREATE TABLE IF NOT EXISTS trend_summaries (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      level1           TEXT NOT NULL DEFAULT '',
+      level2           TEXT NOT NULL DEFAULT '',
+      level3           TEXT NOT NULL DEFAULT '',
+      period_from      INTEGER NOT NULL,
+      period_to        INTEGER NOT NULL,
+      criteria_version TEXT NOT NULL,
+      model            TEXT,
+      content          TEXT NOT NULL,     -- AI 답 (마크다운)
+      facts            TEXT NOT NULL,     -- AI에게 준 자료
+      evidence         TEXT NOT NULL,     -- 근거 특허 (JSON)
+      checks           TEXT NOT NULL,     -- 검사 결과 (JSON)
+      elapsed_ms       INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_trend_summaries_scope ON trend_summaries (level1, level2, level3, period_from, period_to);
+
     -- 데모 v1 범위 밖, 스키마만 미리 설계
     CREATE TABLE IF NOT EXISTS scraps (
       id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,6 +129,9 @@ function migrate() {
   if (!cols.includes('big_drawing_url')) db.exec('ALTER TABLE patents ADD COLUMN big_drawing_url TEXT');
   const classificationCols = db.prepare('PRAGMA table_info(classification)').all().map((c) => c.name);
   if (!classificationCols.includes('basis_detail')) db.exec('ALTER TABLE classification ADD COLUMN basis_detail TEXT');
+  const colsOf = (table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!colsOf('ipc_map').includes('level3')) db.exec('ALTER TABLE ipc_map ADD COLUMN level3 TEXT');
+  if (!colsOf('keyword_map').includes('requires')) db.exec('ALTER TABLE keyword_map ADD COLUMN requires TEXT');
 }
 
 // 다른 모듈이 import 시점에 prepare 하므로 연결 직후 스키마를 보장
