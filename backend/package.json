@@ -10,6 +10,7 @@
     "sync": "node --env-file-if-exists=.env scripts/run-sync.js",
     "probe": "node --env-file-if-exists=.env scripts/probe-kipris.js",
     "collect": "node --env-file-if-exists=.env scripts/collect-full.js",
+    "collect-china": "node --env-file-if-exists=.env scripts/collect-china.js",
     "classify": "node --env-file-if-exists=.env scripts/run-classify.js",
     "ai-usage": "node --env-file-if-exists=.env scripts/ai-usage.js",
     "predev": "node -e \"const fs=require('fs'); if(!fs.existsSync('.env')) fs.writeFileSync('.env','')\"",
