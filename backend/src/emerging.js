@@ -148,19 +148,28 @@ const monthsBefore = (iso, months) => {
 
 /**
  * 최근 구간에 급증한 용어
- * @param {{applicant?: 'all'|'own'|'competitor', level2?: string, recentMonths?: number, pastMonths?: number, ref?: string}} opts
+ * @param {{applicant?: 'all'|'own'|'competitor', level1?: string, level2?: string, level3?: string,
+ *   recentMonths?: number, pastMonths?: number, ref?: string,
+ *   dateField?: 'open_date'|'application_date', recentFrom?: string, pastFrom?: string}} opts
+ *   dateField·recentFrom·pastFrom: 동향 요약처럼 출원 기간으로 볼 때 (예: 과거 2022-01-01~, 최근 2024-01-01~ref)
  */
-export function burstTerms({ applicant = 'all', level2 = '', recentMonths = 24, pastMonths = 48, ref = '' } = {}) {
+export function burstTerms({
+  applicant = 'all', level1 = '', level2 = '', level3 = '', recentMonths = 24, pastMonths = 48, ref = '',
+  dateField = 'open_date', recentFrom = '', pastFrom = '',
+} = {}) {
   const where = [];
   const params = {};
   if (applicant !== 'all') { where.push('p.applicant_type = @applicant'); params.applicant = applicant; }
+  if (level1) { where.push('c.level1 = @level1'); params.level1 = level1; }
   if (level2) { where.push('c.level2 = @level2'); params.level2 = level2; }
+  if (level3) { where.push('c.level3 = @level3'); params.level3 = level3; }
+  const dateCol = dateField === 'application_date' ? 'p.application_date' : 'p.open_date';
   const rows = db.prepare(`
-    SELECT p.application_number num, p.title, p.abstract, p.applicant_type type, p.open_date pub
+    SELECT p.application_number num, p.title, p.abstract, p.applicant_type type, ${dateCol} pub
     FROM patents p
     LEFT JOIN classification c ON c.application_number = p.application_number
       AND c.is_primary + 0 = 1 AND c.criteria_version || '' = (SELECT MAX(criteria_version) FROM classification)
-    WHERE p.open_date IS NOT NULL ${where.length ? `AND ${where.join(' AND ')}` : ''}
+    WHERE ${dateCol} IS NOT NULL ${where.length ? `AND ${where.join(' AND ')}` : ''}
   `).all(params);
 
   // 분할출원처럼 초록이 같은 특허는 하나로 (Python dedupe와 같음)
@@ -176,8 +185,8 @@ export function burstTerms({ applicant = 'all', level2 = '', recentMonths = 24, 
   if (!docs.length) return { rows: [], recent: 0, past: 0 };
 
   const refDate = ref || docs.at(-1).pub;
-  const recentStart = monthsBefore(refDate, recentMonths);
-  const pastStart = monthsBefore(recentStart, pastMonths);
+  const recentStart = recentFrom || monthsBefore(refDate, recentMonths);
+  const pastStart = pastFrom || monthsBefore(recentStart, pastMonths);
   const recent = docs.filter((d) => d.pub >= recentStart && d.pub <= refDate);
   const past = docs.filter((d) => d.pub >= pastStart && d.pub < recentStart);
 

@@ -44,6 +44,8 @@ const CHECKS = [
   ['strangeNumbers', '자료에 없는 숫자'],
   ['strangePatents', '근거 목록에 없는 출원번호'],
   ['mixups', '다른 특허 내용이 섞였을 수 있는 인용'],
+  ['unsupported', '특허 초록에 없는 효과를 덧붙였을 수 있음'],
+  ['overreach', '근거보다 강한 해석(회사 의도·산업 단계 단정)'],
   ['missingSections', '빠진 칸(답이 잘렸을 수 있음)'],
 ]
 
@@ -147,7 +149,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
             {' '}· {new Date(`${s.created_at.replace(' ', 'T')}Z`).toLocaleString('ko-KR')}
           </p>
           {issues.length === 0
-            ? <p className="check-ok">자동 검사 통과: 자료에 없는 숫자·출원번호, 특허 내용 섞임, 빠진 칸 없음</p>
+            ? <p className="check-ok">자동 검사 통과: 자료에 없는 숫자·출원번호, 특허 내용 섞임, 초록에 없는 효과, 과한 해석, 빠진 칸 없음</p>
             : (
               <div className="check-warn">
                 <b>자동 검사에서 확인이 필요한 부분이 있어요</b>
