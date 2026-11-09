@@ -196,13 +196,13 @@ React 화면 → Express(JavaScript) 서버 → SQLite
 
 ### 2-1. Node.js 설치
 
-[nodejs.org](https://nodejs.org)에서 **LTS** 버전을 받아 설치하세요. 아래 명령으로 설치해도 됩니다.
+[nodejs.org](https://nodejs.org)에서 **LTS** 버전을 받아 설치하세요. **22.12 이상**이어야 해요(그보다 낮으면 실행 명령이 오류를 내요). 아래 명령으로 설치해도 됩니다.
 
 ```powershell
 winget install OpenJS.NodeJS.LTS
 ```
 
-설치가 끝나면 **VS Code를 완전히 껐다가 다시 열고** 터미널에서 확인합니다. 버전 번호가 나오면 성공이에요.
+설치가 끝나면 **VS Code를 완전히 껐다가 다시 열고** 터미널에서 확인합니다. `v22.12` 이상의 번호가 나오면 성공이에요.
 
 ```powershell
 node -v
@@ -283,6 +283,24 @@ npm run dev
 | `npm run sync` | 새로 공개·등록된 특허만 받기 (화면의 새로고침 버튼과 같은 일, 보통 4회 호출) |
 | `npm run collect --prefix backend` | 전체 특허 수집 (처음 한 번, 약 200회 호출) |
 | `npm run classify --prefix backend` | 대응표(`backend/classification/*.csv`)를 DB에 넣고 전체 특허를 다시 분류 (KIPRIS 호출 없음) |
+| `npm run ai-usage --prefix backend` | 최근 30일 AI 호출 수·실패 수·토큰 수 보기 (기록은 DB의 `ai_calls`, `ask_log` 테이블) |
+| `npm run build` | 시연·배포용 화면 만들기 (`frontend/dist`) |
+| `npm start` | 시연·배포용 실행: 백엔드 하나가 API와 빌드된 화면을 같이 띄움 |
+
+### 시연·배포할 때 (개발 서버 없이 실행)
+
+`npm run dev`는 고칠 때 바로 반영되는 개발용이에요. 시연이나 배포는 화면을 한 번 만들어 두고 백엔드 하나로 띄워요.
+
+```powershell
+npm run build
+```
+
+```powershell
+npm start
+```
+
+화면과 API가 **백엔드 포트 하나**로 같이 열려요. 내 노트북은 http://localhost:4000, 천안 서버는 `$PORT + 100`이에요.
+화면 코드를 고쳤으면 `npm run build`를 다시 해야 반영돼요.
 
 ---
 

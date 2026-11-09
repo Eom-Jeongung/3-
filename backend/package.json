@@ -11,9 +11,11 @@
     "probe": "node --env-file-if-exists=.env scripts/probe-kipris.js",
     "collect": "node --env-file-if-exists=.env scripts/collect-full.js",
     "classify": "node --env-file-if-exists=.env scripts/run-classify.js",
+    "ai-usage": "node --env-file-if-exists=.env scripts/ai-usage.js",
     "predev": "node -e \"const fs=require('fs'); if(!fs.existsSync('.env')) fs.writeFileSync('.env','')\"",
     "dev": "node --env-file-if-exists=.env --watch src/index.js",
-    "start": "node --env-file-if-exists=.env src/index.js"
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "summary-trial": "node --env-file-if-exists=.env scripts/summary-trial.js"
   },
   "keywords": [],
   "author": "",
