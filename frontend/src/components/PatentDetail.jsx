@@ -124,9 +124,9 @@ export default function PatentDetail({ id, onClose }) {
 
             {primary && (
               <>
-                <h3>기술 분야 <span className="muted">· 임시 기준 {primary.criteria_version}</span></h3>
+                <h3>기술 분야 <span className="muted">· 분류 기준 {primary.criteria_version}</span></h3>
                 <p className="class-path">{[primary.level1, primary.level2, primary.level3].filter(Boolean).join(' › ')}</p>
-                <p className="class-basis">근거: {primary.basis}{primary.basis_detail ? ` (첫 IPC ${primary.basis_detail})` : ''}</p>
+                <p className="class-basis">근거: {primary.basis}{primary.basis_detail ? ` (${['명칭', '청구항'].includes(primary.basis) ? primary.basis_detail : `IPC ${primary.basis_detail}`})` : ''}</p>
                 {secondary.length > 0 && (
                   <div className="keywords">
                     <span className="class-basis">부분류</span>
