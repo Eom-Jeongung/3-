@@ -26,8 +26,8 @@ router.get('/', (req, res) => {
   const params = {};
 
   if (applicant_type) {
-    if (!['own', 'competitor'].includes(applicant_type)) {
-      return res.status(400).json({ error: 'applicant_type은 own 또는 competitor' });
+    if (!['own', 'competitor', 'china'].includes(applicant_type)) {
+      return res.status(400).json({ error: 'applicant_type은 own, competitor, china 중 하나' });
     }
     where.push('applicant_type = @applicant_type');
     params.applicant_type = applicant_type;

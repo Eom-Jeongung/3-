@@ -18,7 +18,7 @@ export function initSchema() {
       id                 INTEGER PRIMARY KEY AUTOINCREMENT,
       application_number TEXT NOT NULL UNIQUE,              -- applicationNumber
       applicant_name     TEXT NOT NULL,                     -- applicantName
-      applicant_type     TEXT NOT NULL CHECK (applicant_type IN ('own', 'competitor')),
+      applicant_type     TEXT NOT NULL CHECK (applicant_type IN ('own', 'competitor', 'china')), -- china: 중국 경쟁사 (BOE·CSOT 등)
       title              TEXT NOT NULL,                     -- inventionTitle
       application_date   TEXT NOT NULL,                     -- applicationDate
       registration_date  TEXT,                              -- registerDate (미등록이면 NULL)
@@ -132,6 +132,34 @@ function migrate() {
   const colsOf = (table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
   if (!colsOf('ipc_map').includes('level3')) db.exec('ALTER TABLE ipc_map ADD COLUMN level3 TEXT');
   if (!colsOf('keyword_map').includes('requires')) db.exec('ALTER TABLE keyword_map ADD COLUMN requires TEXT');
+  allowChinaType();
+}
+
+// 중국 경쟁사(applicant_type 'china')를 넣을 수 있게 patents 표를 다시 만든다 (2026-11 추가)
+// SQLite는 CHECK 조건을 바꿀 수 없어서: 새 표 만들기 → 그대로 복사(id 유지) → 옛 표 지우기 → 이름 바꾸기
+function allowChinaType() {
+  const { sql } = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'patents'`).get();
+  if (sql.includes("'china'")) return;
+  const newSql = sql.replace("CHECK (applicant_type IN ('own', 'competitor'))", "CHECK (applicant_type IN ('own', 'competitor', 'china'))")
+    .replace('CREATE TABLE patents (', 'CREATE TABLE patents_new (');
+  if (newSql === sql || !newSql.includes("'china'")) throw new Error('patents 표 구조가 예상과 달라 중국 경쟁사 항목을 추가하지 못했습니다');
+  const indexes = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'patents' AND sql IS NOT NULL`).all();
+  const before = db.prepare('SELECT COUNT(*) n FROM patents').get().n;
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      db.exec(newSql);
+      db.exec('INSERT INTO patents_new SELECT * FROM patents');
+      db.exec('DROP TABLE patents');
+      db.exec('ALTER TABLE patents_new RENAME TO patents');
+      for (const { sql: s } of indexes) db.exec(s);
+      const after = db.prepare('SELECT COUNT(*) n FROM patents').get().n;
+      if (after !== before) throw new Error(`복사 건수가 다름 (${before} → ${after})`);
+    })();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+  console.log(`patents 표에 중국 경쟁사(china) 항목 추가: ${before}건 유지`);
 }
 
 // 다른 모듈이 import 시점에 prepare 하므로 연결 직후 스키마를 보장

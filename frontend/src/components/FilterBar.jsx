@@ -4,6 +4,7 @@ const APPLICANT_TYPES = [
   { value: '', label: '전체' },
   { value: 'own', label: '자사' },
   { value: 'competitor', label: '경쟁사' },
+  { value: 'china', label: '중국 경쟁사' },
 ]
 
 const SEARCH_DELAY_MS = 300 // 글자를 칠 때마다 요청하지 않도록 잠깐 기다린다

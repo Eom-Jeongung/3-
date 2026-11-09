@@ -61,7 +61,7 @@ export function countsByField({ level1, level2, level3 }, windows) {
       for (const c of COMPANIES) counts[c][i] = w[c];
       return;
     }
-    for (const { company, n } of stmt.all({ ...Object.fromEntries(levels), from: w.from, to: w.to })) counts[company][i] = n;
+    for (const { company, n } of stmt.all({ ...Object.fromEntries(levels), from: w.from, to: w.to })) if (counts[company]) counts[company][i] = n;
   });
   return counts;
 }
@@ -88,6 +88,7 @@ export function getOverview() {
   const topicMap = new Map();
   windows.forEach((w, i) => {
     for (const { company, level2, level3, n } of byField.all(w.from, w.to)) {
+      if (!COMPANIES.includes(company)) continue; // 중국 경쟁사는 아직 이 화면에 넣지 않았다
       if (level2 === UNCLASSIFIED) { unclassified[company][i] += n; continue; }
       addCount(fieldMap, level2, { level2 }, company, i, n);
       // '기타 ○○'는 어디에도 안 걸린 나머지라 기술 흐름으로 읽을 수 없어 세부 기술 순위에서 뺀다

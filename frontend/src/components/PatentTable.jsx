@@ -1,6 +1,8 @@
 import { useRef } from 'react'
 import { PAGE_SIZE } from '../hooks/usePatentList.js'
 
+const TYPE_LABELS = { own: '자사', competitor: '경쟁사', china: '중국 경쟁사' }
+
 const COLUMNS = [
   { key: 'application_number', label: '출원번호' },
   { key: 'title', label: '발명의 명칭', sortable: true },
@@ -87,7 +89,7 @@ export default function PatentTable({ items, total, sort, onSortChange, onSelect
               <td className="mono">{formatAppNo(p.application_number)}</td>
               <td className="title-cell" title={p.title}>{p.title}</td>
               <td>
-                <span className={`type-tag ${p.applicant_type}`}>{p.applicant_type === 'own' ? '자사' : '경쟁사'}</span>
+                <span className={`type-tag ${p.applicant_type}`}>{TYPE_LABELS[p.applicant_type]}</span>
                 <span className="applicant" title={p.applicant_name.replaceAll('|', ', ')}>{formatApplicant(p.applicant_name)}</span>
               </td>
               <td className="mono">{p.application_date ?? '-'}</td>

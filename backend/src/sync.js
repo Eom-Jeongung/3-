@@ -1,7 +1,7 @@
 // 수집·가공·저장 파이프라인
 // 화면의 새로고침 버튼(manual) + 자동 갱신(scheduled, src/scheduler.js)이 같이 쓴다
 import { db, initSchema } from './db.js';
-import { searchPatents, APPLICANTS } from './kipris.js';
+import { searchPatents, APPLICANTS, CHINA_APPLICANTS } from './kipris.js';
 import { classifyTech } from './classify.js';
 import { classifyPatents, hasCriteria } from './classification.js';
 
@@ -93,7 +93,7 @@ export function saveRows(rows, syncedAt) {
 // 전체 수집(npm run collect) 이후에는 "DB에 있는 마지막 날짜 이후"만 KIPRIS에 묻는다
 // - 공개일(openDate): 새로 공개된 특허
 // - 등록일(registerDate): 공개 없이 바로 등록된 특허 + 공개 → 등록으로 상태가 바뀐 특허
-// 보통 회사 2 × 기준 2 = 4회 호출로 끝난다 (예전 샘플 방식은 28회)
+// 보통 회사 2 × 기준 2 = 4회 호출로 끝난다 (예전 샘플 방식은 28회). 중국 경쟁사를 받은 뒤로는 회사 3곳 × 2회가 더 든다
 const OVERLAP_DAYS = 30; // KIPRIS에 늦게 올라오는 건을 놓치지 않게 겹쳐서 조회 (겹친 건은 upsert라 중복 저장 안 됨)
 const PAGE_SIZE = 500;
 const latestDates = db.prepare('SELECT MAX(open_date) open, MAX(registration_date) reg FROM patents WHERE applicant_type = ?');
@@ -122,7 +122,12 @@ async function runSyncOnce({ source = 'manual', useCache = false, log = () => {}
   const byNumber = new Map(); // 공개일·등록일 조회에 같은 특허가 겹쳐 나올 수 있어 출원번호로 합친다
   let calls = 0;
   try {
-    for (const [type, applicant] of Object.entries(APPLICANTS)) {
+    // 중국 경쟁사는 전체 수집(npm run collect-china)을 한 뒤부터 함께 갱신한다
+    const targets = [
+      ...Object.entries(APPLICANTS).map(([type, applicant]) => ({ type, applicant })),
+      ...(latestDates.get('china').open ? CHINA_APPLICANTS.map((c) => ({ type: 'china', applicant: c.query, match: c.match })) : []),
+    ];
+    for (const { type, applicant, match } of targets) {
       const { open, reg } = latestDates.get(type);
       if (!open) throw new Error('DB가 비어 있습니다. 먼저 backend에서 npm run collect로 전체 수집을 하세요');
       for (const [field, last] of [['openDate', open], ['registerDate', reg ?? open]]) {
@@ -134,7 +139,7 @@ async function runSyncOnce({ source = 'manual', useCache = false, log = () => {}
           );
           if (!res.fromCache) calls++;
           pages = Math.ceil(res.totalCount / PAGE_SIZE);
-          for (const it of res.items) byNumber.set(it.applicationNumber, normalize(it, type, syncedAt));
+          for (const it of res.items) if (!match || match.test(it.applicantName ?? '')) byNumber.set(it.applicationNumber, normalize(it, type, syncedAt));
         }
         log(`[${type}] ${field} ${from}~${to}`);
       }

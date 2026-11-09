@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 
+const TYPE_LABELS = { own: '자사', competitor: '경쟁사', china: '중국 경쟁사' }
+
 const formatAppNo = (n) => (n?.length === 13 ? `${n.slice(0, 2)}-${n.slice(2, 6)}-${n.slice(6)}` : n)
 
 // 상세 패널: 목록에서 행을 누르면 오른쪽에서 열린다 (GET /api/patents/:id)
@@ -87,7 +89,7 @@ export default function PatentDetail({ id, onClose }) {
         {patent && (
           <>
             <div className="drawer-tags">
-              <span className={`type-tag ${patent.applicant_type}`}>{patent.applicant_type === 'own' ? '자사' : '경쟁사'}</span>
+              <span className={`type-tag ${patent.applicant_type}`}>{TYPE_LABELS[patent.applicant_type]}</span>
               <span className={`status ${patent.legal_status === '등록' ? 'status-registered' : patent.legal_status === '공개' ? 'status-pending' : 'status-dead'}`}>
                 {patent.legal_status}
               </span>

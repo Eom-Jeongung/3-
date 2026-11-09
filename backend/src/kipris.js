@@ -17,6 +17,17 @@ export const APPLICANTS = {
   competitor: '삼성디스플레이',
 };
 
+// 중국 경쟁사 (applicant_type 'china'). KIPRIS 출원인 검색은 이름 일부만 맞아도 나오므로
+// match에 맞는 출원인만 남긴다 (예: "티안마"로 찾으면 "닝보 케티안 마그넷"도 나옴)
+export const CHINA_APPLICANTS = [
+  { company: 'BOE', query: '보에 테크놀로지', match: /보에 ?테크놀로지|비오이/ },
+  { company: 'CSOT', query: '차이나 스타 옵토일렉트로닉스', match: /차이나 ?스타 ?옵토일렉트로닉스/ },
+  { company: 'Tianma', query: '티안마', match: /티안마/ },
+];
+
+/** 출원인 이름 → 중국 경쟁사 이름 (아니면 null) */
+export const chinaCompanyOf = (applicantName) => CHINA_APPLICANTS.find((c) => c.match.test(applicantName ?? ''))?.company ?? null;
+
 // lastvalue 파라미터의 상태 코드
 export const STATUS_CODES = { 공개: 'A', 취하: 'C', 소멸: 'F', 포기: 'G', 무효: 'I', 거절: 'J', 등록: 'R' };
 
