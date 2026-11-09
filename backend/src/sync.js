@@ -1,5 +1,5 @@
 // 수집·가공·저장 파이프라인
-// 데모 v1: 수동 실행만 (node-cron 스케줄러는 보류, SYNC_INTERVAL_CRON 미사용)
+// 화면의 새로고침 버튼(manual) + 자동 갱신(scheduled, src/scheduler.js)이 같이 쓴다
 import { db, initSchema } from './db.js';
 import { searchPatents, APPLICANTS } from './kipris.js';
 import { classifyTech } from './classify.js';
@@ -100,8 +100,22 @@ const latestDates = db.prepare('SELECT MAX(open_date) open, MAX(registration_dat
 const exists = db.prepare('SELECT 1 FROM patents WHERE application_number = ?');
 const countByType = db.prepare('SELECT COUNT(*) n FROM patents WHERE applicant_type = ?');
 
+// 수동·자동 갱신이 동시에 돌지 않게 하는 표시
+let running = false;
+export const isSyncRunning = () => running;
+
 /** @returns {Promise<{ fetched: number, added: number, changed: number, calls: number, syncedAt: string }>} */
-export async function runSync({ source = 'manual', useCache = false, log = () => {} } = {}) {
+export async function runSync(options = {}) {
+  if (running) throw new Error('이미 수집 중입니다');
+  running = true;
+  try {
+    return await runSyncOnce(options);
+  } finally {
+    running = false;
+  }
+}
+
+async function runSyncOnce({ source = 'manual', useCache = false, log = () => {} } = {}) {
   initSchema();
   const syncedAt = new Date().toISOString();
   const to = ymd(new Date());
