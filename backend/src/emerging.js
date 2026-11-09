@@ -148,7 +148,7 @@ const monthsBefore = (iso, months) => {
 
 /**
  * 최근 구간에 급증한 용어
- * @param {{applicant?: 'all'|'own'|'competitor', level1?: string, level2?: string, level3?: string,
+ * @param {{applicant?: 'all'|'own'|'competitor'|'china', level1?: string, level2?: string, level3?: string,
  *   recentMonths?: number, pastMonths?: number, ref?: string,
  *   dateField?: 'open_date'|'application_date', recentFrom?: string, pastFrom?: string}} opts
  *   dateField·recentFrom·pastFrom: 동향 요약처럼 출원 기간으로 볼 때 (예: 과거 2022-01-01~, 최근 2024-01-01~ref)
@@ -193,7 +193,6 @@ function computeBurstTerms({
   const where = [];
   const params = {};
   if (applicant !== 'all') { where.push('p.applicant_type = @applicant'); params.applicant = applicant; }
-  else where.push("p.applicant_type IN ('own', 'competitor')"); // 둘 다 = 자사 + 삼성 (중국 경쟁사는 아직 따로 안 봄)
   if (level1) { where.push('c.level1 = @level1'); params.level1 = level1; }
   if (level2) { where.push('c.level2 = @level2'); params.level2 = level2; }
   if (level3) { where.push('c.level3 = @level3'); params.level3 = level3; }

@@ -8,7 +8,7 @@ import { CRITERIA_VERSION } from './classification.js';
 import { checkSummary, SECTIONS } from './summaryCheck.js';
 import { burstTerms } from './emerging.js';
 
-const COMPANY = { own: '자사(LG디스플레이)', competitor: '경쟁사(삼성디스플레이 중심)' };
+const COMPANY = { own: '자사(LG디스플레이)', competitor: '경쟁사(삼성디스플레이)', china: '중국 경쟁사(BOE·CSOT·Tianma·Visionox)' };
 const EVIDENCE_LIMIT = 10;
 const BURST_LIMIT = 6; // 회사별로 AI에게 줄 급증 용어 수
 // 급증 용어 중 뜻이 약한 말 (자동 추출 잡음)
@@ -126,13 +126,16 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
   });
 
   const years = keep.map(([p]) => p.key);
-  const smallData = totals.some((t) => t.counts.some((n) => n < MIN_COUNT));
+  // 중국 경쟁사는 한국 출원이 원래 적어 거의 늘 30건 미만이므로, 자사·삼성 기준 주의와 따로 알린다
+  const smallData = totals.filter((t) => t.company !== 'china').some((t) => t.counts.some((n) => n < MIN_COUNT));
+  const chinaSmall = totals.some((t) => t.company === 'china' && t.counts.some((n) => n < MIN_COUNT));
   const changeText = (c) => (c === null ? '계산 안 함(30건 미만)' : `${c}%`);
   const statText = [
     `분류: ${scopeLabel(scope)} (분류 기준 ${CRITERIA_VERSION}), 기간: ${from}~${to}년 출원`,
     `연도: ${years.join(', ')}`,
     incomplete.length ? `아직 공개가 덜 된 연도(건수가 적게 보임): ${incomplete.join(', ')}` : '',
     smallData ? '주의: 연간 30건 미만인 회사·연도가 있어 몇 건 차이로도 흐름이 크게 달라 보일 수 있음' : '',
+    chinaSmall ? '참고: 중국 경쟁사는 한국 출원이 연간 30건 미만인 해가 있어 증감을 해석하지 않음' : '',
     '',
     '[회사별 전체 건수 (연도순), 첫해 대비 마지막 해 증감률]',
     ...totals.map((t) => `${COMPANY[t.company]}: ${t.counts.join(', ')} / 증감 ${changeText(t.change)}`),
@@ -163,7 +166,7 @@ const SYSTEM_PROMPT = [
   '규칙:',
   '- 숫자(건수, %, 연도)는 아래 [자료]에 적힌 값을 그대로만 쓴다. 비중·차이·합계·배율을 새로 계산하지 않는다. 필요한 비중은 [분야별 비중]에 있다.',
   '- 특허를 언급할 때는 [근거 후보 특허]의 출원번호를 괄호로 붙인다. 목록에 없는 특허는 언급하지 않는다.',
-  '- 특허 하나를 설명할 때는 그 특허의 명칭과 초록에 있는 내용만 쓴다. 다른 특허의 내용을 섞지 않는다. 회사(자사/경쟁사)도 그 특허 줄에 적힌 대로 쓴다.',
+  '- 특허 하나를 설명할 때는 그 특허의 명칭과 초록에 있는 내용만 쓴다. 다른 특허의 내용을 섞지 않는다. 회사(자사/경쟁사/중국 경쟁사)도 그 특허 줄에 적힌 대로 쓴다.',
   '- 한 문장에서 특허 여러 건을 언급할 때는 각 내용 바로 뒤에 그 특허의 출원번호를 붙인다.',
   '- 해석은 써도 된다. 단, 해석마다 근거(자료의 숫자, [급증 용어], 근거 특허 출원번호 중 둘 이상)를 함께 쓰고, "~로 보인다", "~가능성이 있다"처럼 추정임을 밝힌다.',
   '  예: "급증 용어 \'광학 부재\'(6/0)가 새로 나타나고 근거 특허(출원번호)도 광학 부재를 다뤄, 패널 위 광학 구조에 관심이 커진 것으로 보인다."',
@@ -180,10 +183,11 @@ const SYSTEM_PROMPT = [
   '- 증감률은 첫해 대비 마지막 해 값이다(예: "2022년 대비 2024년 24% 증가"). "전년 대비"라고 쓰지 않는다.',
   '- "가장 높다/가장 많이 늘었다" 같은 순위 표현은 [증감률 순위]와 [분야별 비중]에 적힌 순서대로만 쓴다.',
   '- 특허 설명에 초록에 없는 효과(신뢰성 강화, 내구성 향상 등)를 덧붙이지 않는다.',
+  '- "경쟁사 동향" 칸은 삼성디스플레이를 먼저 쓰고, 중국 경쟁사는 따로 1~2문장으로 쓴다. [자료]에 "참고: 중국 경쟁사는"이 있으면 중국 경쟁사는 건수 사실만 쓰고 해석하지 않는다.',
   '- 형식은 반드시 아래 다섯 칸을 이 순서로 쓴다.',
   ...SECTIONS.map((s) => `## ${s}${s === '핵심 흐름' ? ' (3줄)' : ''}`),
   '- [자료]에 "주의: 연간 30건 미만"이 있으면 "크게 늘었다/급감" 같은 강한 표현을 쓰지 말고, 한계 칸에 건수가 적어 해석에 주의가 필요하다고 쓴다.',
-  '- 한계 칸에는 반드시 다음을 포함한다: 분류는 규칙 기반 자동 분류이며 무작위 검증 정확도 약 85%; 건수는 출원일 기준이며 패밀리·후속 출원이 포함됨; 경쟁사는 현재 삼성디스플레이 중심.',
+  '- 한계 칸에는 반드시 다음을 포함한다: 분류는 규칙 기반 자동 분류이며 무작위 검증 정확도 약 85%; 건수는 출원일 기준이며 패밀리·후속 출원이 포함됨; 경쟁사는 삼성디스플레이, 중국 경쟁사는 BOE·CSOT·Tianma·Visionox의 한국 출원만 포함(중국 회사는 한국 출원이 적음).',
 ].join('\n');
 
 const scopeKey = ({ level1 = '', level2 = '', level3 = '' }) => ({ level1: level1 ?? '', level2: level2 ?? '', level3: level3 ?? '' });

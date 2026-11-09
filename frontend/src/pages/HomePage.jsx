@@ -2,7 +2,8 @@ import TrendSection from '../components/TrendSection.jsx'
 
 const SERIES = [
   { key: 'own', label: '자사', tag: 'own' },
-  { key: 'competitor', label: '경쟁사', tag: 'competitor' },
+  { key: 'competitor', label: '삼성', tag: 'competitor' },
+  { key: 'china', label: '중국 4사', tag: 'china' },
 ]
 
 
@@ -27,14 +28,14 @@ export default function HomePage({ overview, refreshKey }) {
   const fields = overview?.fields ?? []
   const minCount = overview?.minCount ?? 0
   const movers = overview?.movers
-  const unclassifiedTotal = overview ? overview.unclassified.own[0] + overview.unclassified.competitor[0] : 0
-  const recentTotal = latest ? latest.own + latest.competitor : 0
+  const unclassifiedTotal = overview ? SERIES.reduce((s, c) => s + (overview.unclassified[c.key]?.[0] ?? 0), 0) : 0
+  const recentTotal = latest ? SERIES.reduce((s, c) => s + (latest[c.key] ?? 0), 0) : 0
 
   return (
     <>
       <header className="hero">
         <h1 className="page-title">트렌드 분석</h1>
-        <p className="period">엘지디스플레이(자사) · 삼성디스플레이(경쟁사) 기술 분야별 특허 흐름</p>
+        <p className="period">엘지디스플레이(자사) · 삼성디스플레이 · 중국 4사(BOE·CSOT·Tianma·Visionox) 기술 분야별 특허 흐름</p>
         <a className="hero-btn" href="#/patents">특허 목록 &gt;</a>
       </header>
 
@@ -81,7 +82,7 @@ export default function HomePage({ overview, refreshKey }) {
           </section>
         )}
 
-        {movers && (movers.own.length > 0 || movers.competitor.length > 0) && (
+        {movers && SERIES.some((s) => movers[s.key]?.length > 0) && (
           <section className="card card-gap" aria-labelledby="movers-title">
             <h2 id="movers-title" className="card-title">많이 늘어난 세부 기술</h2>
             <p className="table-meta">최근 12개월과 1년 전 비교 · 1년 전 {minCount}건 이상인 기술만</p>
@@ -90,7 +91,7 @@ export default function HomePage({ overview, refreshKey }) {
                 <div key={s.key}>
                   <h3 className="movers-title"><span className={`type-tag ${s.tag}`}>{s.label}</span></h3>
                   <ol className="mover-list">
-                    {movers[s.key].map((m) => (
+                    {(movers[s.key] ?? []).map((m) => (
                       <li key={`${m.level2}${m.level3}`}>
                         <span>
                           {m.level3} <span className="muted">{m.level2}</span>
