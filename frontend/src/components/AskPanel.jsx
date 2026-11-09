@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-const EXAMPLES = ['자사 OLED 소자 최근 추이 알려줘', '삼성이 우리보다 많이 늘린 분야는?', '탠덤 관련 최근 공개 특허 보여줘']
+const EXAMPLES = ['자사 소자 분야 최근 추이 알려줘', '삼성이 우리보다 많이 늘린 분야는?', '탠덤 관련 최근 공개 특허 보여줘']
 const WINDOW_LABELS = ['최근 12개월', '1년 전', '2년 전']
 
 const formatCount = (n) => n.toLocaleString('ko-KR')

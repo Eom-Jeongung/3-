@@ -190,7 +190,7 @@ export async function answerQuestion(question) {
   const planText = await chat([
     { role: 'system', content: planPrompt(options) },
     { role: 'user', content: question },
-  ], { maxTokens: 300 });
+  ], { maxTokens: 300, purpose: 'ask-plan' });
   const plan = parsePlan(planText, options);
   if (plan.type === 'unsupported') return { answer: UNSUPPORTED_ANSWER, plan, evidence: [], source: 'none' };
 
@@ -199,7 +199,7 @@ export async function answerQuestion(question) {
     const answer = await chat([
       { role: 'system', content: ANSWER_PROMPT },
       { role: 'user', content: `[사용자 질문]\n${question}\n\n[조회 결과]\n${JSON.stringify({ minCountForChange: MIN_COUNT, evidence })}` },
-    ]);
+    ], { purpose: 'ask-answer' });
     if (!hasUnknownNumbers(answer, evidence, question)) return { answer, plan, evidence, source: 'ai' };
   } catch (err) {
     console.error(`AI 답변 작성 실패: ${err.message}`);
