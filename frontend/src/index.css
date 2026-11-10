@@ -384,6 +384,40 @@ button { font: inherit; letter-spacing: inherit; color: inherit; cursor: pointer
 .field-link { color: var(--text); font-size: 14px; font-weight: 600; text-decoration: none; }
 .field-link:hover { color: var(--accent); text-decoration: underline; }
 
+/* ---- 홈: 최근 공개 동향 (회사별 패널) ---- */
+.company-panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.company-panel { --company: var(--text); min-width: 0; border: 1px solid var(--hairline); border-radius: var(--radius-sm); overflow: hidden; }
+.company-panel.tone-own { --company: var(--own); }
+.company-panel.tone-competitor { --company: var(--competitor); }
+.company-panel.tone-china { --company: var(--china); }
+.company-head {
+  display: flex; align-items: center; gap: 8px; margin: 0; padding: 12px 16px;
+  font-size: 16px; font-weight: 800; letter-spacing: -0.02em; color: var(--company);
+  background: color-mix(in srgb, var(--company) 9%, transparent); border-bottom: 1px solid var(--hairline);
+}
+.company-rows { list-style: none; margin: 0; padding: 2px 16px 6px; }
+.company-rows li {
+  display: grid; grid-template-columns: minmax(56px, 1fr) 40px 72px 64px; align-items: center; gap: 10px;
+  min-height: 50px; border-bottom: 1px solid var(--hairline);
+}
+.company-rows li:last-child { border-bottom: 0; }
+.company-rows .field-link { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-count { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.row-count b { font-size: 18px; font-weight: 800; }
+.row-count small { font-size: 11px; color: var(--faint); }
+.mini-bars { display: flex; align-items: flex-end; gap: 3px; height: 26px; }
+.mini-bars i { flex: 1; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--fill-strong); }
+.mini-bars i.latest { background: var(--company); }
+.change-badge {
+  justify-self: end; min-width: 56px; padding: 3px 6px; border-radius: 6px; text-align: center;
+  font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.change-badge.up { color: var(--up); background: color-mix(in srgb, var(--up) 13%, transparent); }
+.change-badge.down { color: var(--down); background: color-mix(in srgb, var(--down) 13%, transparent); }
+.change-badge.flat, .change-badge.none { color: var(--faint); background: var(--fill); font-weight: 500; }
+.table-toggle { margin-top: 14px; font-size: 13px; }
+.table-toggle + .table-wrap { margin-top: 8px; }
+
 /* ---- 홈: 많이 늘어난 세부 기술 ---- */
 .movers { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 40px; }
 .movers-title { margin: 8px 0 6px; font-size: 14px; }
@@ -611,6 +645,7 @@ tbody tr:last-child td { border-bottom: 0; }
 @media (max-width: 1200px) {
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dash-row { grid-template-columns: minmax(0, 1fr); }
+  .company-panels { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 960px) {
@@ -636,4 +671,7 @@ tbody tr:last-child td { border-bottom: 0; }
   .insight-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .top-search kbd { display: none; }
   .kpi-value strong { font-size: 32px; }
+  .company-rows { padding: 2px 12px 6px; }
+  .company-rows li { grid-template-columns: minmax(48px, 1fr) 34px 64px 54px; gap: 8px; }
+  .change-badge { min-width: 50px; padding: 3px 4px; }
 }

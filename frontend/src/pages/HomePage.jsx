@@ -41,9 +41,58 @@ function Delta({ value }) {
   )
 }
 
+// 증감 배지: 늘면 초록, 줄면 주황. 1년 전 건수가 기준 미만이면 회색 '-'
+function ChangeBadge({ current, previous, minCount }) {
+  const text = changeText(current, previous, minCount)
+  if (text === '-') return <span className="change-badge none" title={`1년 전 ${minCount}건 미만이라 표시하지 않아요`}>-</span>
+  const dir = current > previous ? 'up' : current < previous ? 'down' : 'flat'
+  const arrow = dir === 'up' ? '▲' : dir === 'down' ? '▼' : ''
+  return <span className={`change-badge ${dir}`}>{arrow}{text.replace(/^[+-]/, '')}</span>
+}
+
+// 2년 전 → 1년 전 → 최근 12개월 막대 3개 (행마다 자기 최댓값 기준이라 흐름 모양을 본다)
+function MiniBars({ counts }) {
+  const values = [2, 1, 0].map((i) => counts[i] ?? 0)
+  const max = Math.max(...values, 1)
+  const label = [2, 1, 0].map((i, k) => `${WINDOW_LABELS[i]} ${formatCount(values[k])}건`).join(', ')
+  return (
+    <span className="mini-bars" role="img" aria-label={label} title={label}>
+      {values.map((v, k) => (
+        <i key={k} className={k === 2 ? 'latest' : ''} style={{ height: `${Math.max((v / max) * 100, v > 0 ? 6 : 2)}%` }} />
+      ))}
+    </span>
+  )
+}
+
+// 최근 공개 동향: 회사 하나의 분야별 최근 12개월 건수와 증감
+function CompanyPanel({ series, fields, minCount }) {
+  return (
+    <section className={`company-panel tone-${series.tag}`} aria-label={`${series.label} 최근 공개 동향`}>
+      <h3 className="company-head"><i className={`dot tone-${series.tag}`} />{series.label}</h3>
+      <ul className="company-rows">
+        {fields.map((f) => {
+          const c = f[series.key]
+          return (
+            <li key={f.level2}>
+              <a className="field-link" href={fieldLink(f.level2)}>{f.level2}</a>
+              <MiniBars counts={c} />
+              <span className="row-count">
+                <b>{formatCount(c[0])}</b>
+                <small>1년 전 {formatCount(c[1])}</small>
+              </span>
+              <ChangeBadge current={c[0]} previous={c[1]} minCount={minCount} />
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
 export default function HomePage({ overview, refreshKey }) {
   const [series, setSeries] = useState(null)
   const [showAllMovers, setShowAllMovers] = useState(false)
+  const [showFieldTable, setShowFieldTable] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -220,8 +269,14 @@ export default function HomePage({ overview, refreshKey }) {
       {fields.length > 0 && (
         <section className="dash-card card-gap" aria-labelledby="fields-title">
           <h2 id="fields-title" className="dash-title">최근 공개 동향 (기술 분야별)</h2>
-          <p className="table-meta">공개일 기준 {latest && formatRange(latest)} · 왼쪽부터 2년 전, 1년 전, 최근 12개월 · 증감은 최근 12개월과 1년 전 비교</p>
-          <div className="table-wrap">
+          <p className="dash-sub">최근 12개월 공개 건수 · 공개일 기준 {latest && formatRange(latest)} · 증감은 1년 전과 비교 · 막대는 2년 전 → 1년 전 → 최근 12개월</p>
+          <div className="company-panels">
+            {SERIES.map((s) => <CompanyPanel key={s.key} series={s} fields={fields} minCount={minCount} />)}
+          </div>
+          <button type="button" className="more-link table-toggle" aria-expanded={showFieldTable} onClick={() => setShowFieldTable((v) => !v)}>
+            {showFieldTable ? '숫자 표 접기' : '전체 숫자 표 보기'}
+          </button>
+          {showFieldTable && <div className="table-wrap">
             <table className="field-table">
               <thead>
                 <tr>
@@ -247,7 +302,7 @@ export default function HomePage({ overview, refreshKey }) {
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
           <p className="footnote">
             최근 12개월 공개 {formatCount(totalOf(latest))}건 중 미분류 {formatCount(unclassifiedTotal)}건은 빠져 있어요.
             분류는 규칙 기반 자동 분류(무작위 검증 정확도 약 85%)이고, 공개된 특허는 대체로 1년 반쯤 전에 출원한 기술이에요.
