@@ -8,6 +8,7 @@
 //  3. 흔한 단어 제거: 전체의 8% 넘게 나오는 용어는 뺀다 (IDF 필터)
 //  4. 급증 판정: 최근 구간 vs 과거 구간을 로그우도비로 비교해 "우연이 아닌 증가"만 남긴다
 //  5. 거의 같은 특허에 함께 나오는 용어는 한 줄로 합친다
+import fs from 'node:fs';
 import { db } from './db.js';
 
 export const PARAMS = {
@@ -17,6 +18,9 @@ export const PARAMS = {
   smoothing: 0.0005,
   topN: 50,
   samples: 3,
+  maxPatents: 30,      // 용어마다 화면에 넘겨 줄 특허 수
+  earlyMinDocs: 3,     // 초기 신호: 과거 0건, 최근 이 건수 이상
+  earlyTopN: 20,
 };
 
 const key = (s) => s.replace(/\s+/g, '').toLowerCase();
@@ -44,6 +48,25 @@ const NORMALIZE = [
   [/(모바일\s*)?전자\s*(장치|기기)/g, ','], [/실시\s*(예|례)들?/g, ','], [/일\s*례/g, ','],
   [/구체적(으로|인)?/g, ','],
 ];
+
+// 같은 뜻의 다른 표기를 하나로 (classification/term_synonyms.csv). 흩어져 있으면 건수 기준(5건)을 못 넘어 급증을 놓친다
+// 띄어쓰기 차이(마이크로 LED / 마이크로LED)는 원래 같은 용어로 센다. 여기서는 뜻이 같은 다른 말을 묶는다
+const SYNONYMS = loadSynonyms();
+function loadSynonyms() {
+  const file = new URL('../classification/term_synonyms.csv', import.meta.url);
+  if (!fs.existsSync(file)) return [];
+  const escape = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return fs.readFileSync(file, 'utf8').split(/\r?\n/).slice(1).filter((l) => l.trim()).flatMap((line) => {
+    const [canonical, variants = ''] = line.split(',');
+    return variants.split('|').map((v) => v.trim()).filter(Boolean).map((v) => {
+      const body = v.split(/\s+/).map(escape).join('\\s*');
+      // 영문은 다른 영단어 안에서 걸리지 않게 (QD가 QDOT 안에서 걸리지 않게)
+      // 영문 약어는 앞뒤에 영문·하이픈이 붙으면 다른 말이다 (QD-OLED의 QD는 양자점으로 바꾸지 않는다)
+      const pattern = /^[A-Za-z]/.test(v) ? `(?<![A-Za-z-])${body}(?![A-Za-z-])` : body;
+      return [new RegExp(pattern, 'gi'), canonical.trim()];
+    });
+  });
+}
 
 // 어절 끝의 조사: 떼어 내고, 뗐으면 그 어절에서 명사구가 끝난 것으로 본다
 const PARTICLES = ['으로부터', '에서부터', '로부터', '에서의', '에서는', '에서', '으로는', '으로', '에는', '에게', '와의', '과의',
@@ -84,6 +107,8 @@ const isNumberish = (k) => /^[\d.,%~\-]+$/.test(k);
 export function extractTerms(text, surface) {
   if (!text) return new Set();
   let t = text;
+  for (const [pat, sub] of SYNONYMS) t = t.replace(pat, sub);
+  t = t.replace(/(\S+)\s*\(\s*\1\s*\)/g, '$1'); // "박막 트랜지스터(TFT)"가 같은 말로 바뀌어 겹친 것
   for (const [pat, sub] of NORMALIZE) t = t.replace(pat, sub);
 
   const chunks = [];
@@ -167,6 +192,19 @@ function cachedTerms(d) {
   const entry = { text, keys, phrases };
   termCache.set(d.num, entry);
   return entry;
+}
+
+// ---- 초기 신호 잡음 거르기 ----
+// 건수가 적은 새 용어는 문장 조각("보다 상세하게", "스위칭 소자들로")이 많이 섞여서, 기술 용어로 보기 어려운 구는 뺀다
+const WEAK_WORD = /^(보다|상세하게|여기|일부분|개수|물질|정도|가까운|갖는|덮는|포함하되|기초로|연결해주며|작거나|같다|제공하는바|그리고|당해|제조방법|장착|소재|개시서|패턴|가능성|가로|것|한정부)$|(들로|으로|물질로|하게|시켜|시킬|하되|해주며|하는바|된다|한다|으며|져서|어서|시킨다|함으|으)$|^제\d/;
+// 구의 끝에 오면 앞말을 꾸미는 흔한 말이라 새 기술 이름이 아니다 ("기판 표시", "애노드 전극 발광")
+const WEAK_TAIL = new Set(['표시', '화소', '발광', '신호', '연결', '터치', '게이트', '전극', '패턴', '영역', '라인', '구조', '기판', '절연층', '층']);
+const topSurface = (surface, k) => [...(surface.get(k) ?? new Map([[k, 1]]))].sort((x, y) => y[1] - x[1])[0][0];
+function isWeakPhrase(phrase) {
+  const words = phrase.split(/\s+/);
+  if (words.some((w) => WEAK_WORD.test(w))) return true;
+  if (words.length > 1 && (WEAK_TAIL.has(words.at(-1)) || WEAK_TAIL.has(words[0]))) return true;
+  return false;
 }
 
 // 같은 조건의 결과를 기억해 둔다. 특허가 새로 들어오거나 분류 기준이 바뀌면 다시 계산한다
@@ -256,16 +294,33 @@ function computeBurstTerms({
     });
   }
   out.sort((x, y) => y.llr - x.llr || y.growth - x.growth);
+  const burstKeys = new Set(out.map((r) => r.term));
   out = mergeOverlaps(out.slice(0, PARAMS.topN * 5), recentSets, surface).slice(0, PARAMS.topN);
 
+  // 초기 신호: 과거에는 한 건도 없다가 최근에 3건 이상 나온 새 용어. 건수가 적어 급증 판정(5건 이상)에는 못 들지만
+  // 막 나타나기 시작한 기술일 수 있어 따로 보여 준다. 같은 발명의 쌍둥이 출원만으로 생긴 말을 거르려고 명칭이 2가지 이상이어야 한다
+  const titlesOf = (term) => new Set(recentSets.filter((s) => s.terms.has(term)).map((s) => key(s.d.title ?? ''))).size;
+  let early = [];
+  for (const [term, a] of recentCounts) {
+    if (a < PARAMS.earlyMinDocs || burstKeys.has(term) || pastCounts.has(term)) continue;
+    if (nAll && a / nAll > PARAMS.maxDocShare) continue;
+    if (titlesOf(term) < 2) continue;
+    early.push({ term, recentDocs: a, pastDocs: 0, recentPct: +((a / n1) * 100).toFixed(3), pastPct: 0, isNew: true });
+  }
+  early = early.filter((r) => !isWeakPhrase(topSurface(surface, r.term)));
+  early.sort((x, y) => y.recentDocs - x.recentDocs || key(y.term).length - key(x.term).length);
+  early = mergeOverlaps(early.slice(0, PARAMS.topN * 5), recentSets, surface).slice(0, PARAMS.earlyTopN);
+
   const display = (k) => [...(surface.get(k) ?? new Map([[k, 1]]))].sort((x, y) => y[1] - x[1])[0][0];
-  for (const r of out) {
+  for (const r of [...out, ...early]) {
     const hits = recentSets.filter((s) => s.terms.has(r.term)).map((s) => s.d).sort((x, y) => (x.pub < y.pub ? 1 : -1));
-    r.examples = hits.slice(0, PARAMS.samples).map((d) => ({ id: d.id, applicationNumber: d.num, title: d.title, type: d.type, date: d.pub }));
+    const brief = (d) => ({ id: d.id, applicationNumber: d.num, title: d.title, type: d.type, date: d.pub });
+    r.examples = hits.slice(0, PARAMS.samples).map(brief);
+    r.patents = hits.slice(0, PARAMS.maxPatents).map(brief); // 화면에서 용어를 누르면 보여 줄 특허
     r.related = r.related.slice(0, 8).map(display);
     r.term = display(r.term);
   }
-  return { rows: out, ref: refDate, recentStart, pastStart, recent: n1, past: n2 };
+  return { rows: out, early, ref: refDate, recentStart, pastStart, recent: n1, past: n2 };
 }
 
 /** 거의 같은 특허에 함께 나오는 용어(자카드 0.8 이상)는 한 줄로 합치고, 가장 구체적인 용어를 대표로 */

@@ -43,6 +43,7 @@ const madeThisQuarter = db.prepare(`
   SELECT 1 FROM trend_summaries
   WHERE level1 = @level1 AND level2 = @level2 AND level3 = @level3 AND period_from = @from AND period_to = @to
     AND criteria_version = @version AND created_at >= @since
+    AND json_array_length(json_extract(checks, '$.missingSections')) = 0 -- 답이 잘린 요약은 없는 것으로 보고 다시 만든다
   LIMIT 1
 `);
 
@@ -82,6 +83,12 @@ export async function runQuarterlySummaries({ log = console.log, waits = WAIT_MS
       for (let attempt = 0; ; attempt++) {
         try {
           const s = await generateTrendSummary(scope, { source: 'auto' });
+          // 추론형 무료 모델은 생각에 토큰을 많이 써서 답이 중간에 끊길 때가 있다 → 한 번 더 만든다
+          if (s.checks.missingSections.length && attempt < RETRIES) {
+            log(`[자동 요약] ${name}: 답이 잘림(빠진 칸 ${s.checks.missingSections.join(', ')}) → 다시 만들기`);
+            await sleep(waits.between);
+            continue;
+          }
           made++;
           const warn = Object.values(s.checks).some((v) => v.length) ? ' (자동 검사에서 확인할 부분 있음)' : '';
           log(`[자동 요약] ${i + 1}/${todo.length} ${name} 완료 #${s.id}, ${(s.elapsed_ms / 1000).toFixed(0)}초${warn}`);
