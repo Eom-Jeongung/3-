@@ -6,6 +6,8 @@ import HomePage from './pages/HomePage.jsx'
 import PatentsPage from './pages/PatentsPage.jsx'
 import SummaryPage from './pages/SummaryPage.jsx'
 
+const AUTO_SYNC_DAYS = 90 // 서버 SYNC_INTERVAL_DAYS 기본값과 같게
+
 const formatDateTime = (iso) =>
   iso ? new Date(iso).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' }) : '-'
 
@@ -33,9 +35,6 @@ export default function App() {
   const route = routeOf(hash)
   const [overview, setOverview] = useState(null)
   const [error, setError] = useState(null)
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState(null)
-  const [refreshKey, setRefreshKey] = useState(0)
   const [searchText, setSearchText] = useState('')
   const [search, setSearch] = useState(null) // 상단 검색 → 특허 목록 검색어로 넘긴다 ({ q, n }: 같은 말로 다시 찾아도 반영되게 n을 올린다)
   const [navOpen, setNavOpen] = useState(false) // 좁은 화면에서 사이드바 열기
@@ -63,22 +62,8 @@ export default function App() {
 
   useEffect(() => { loadOverview() }, [loadOverview])
 
-  async function handleSync() {
-    setSyncing(true)
-    try {
-      const res = await fetch('/api/sync', { method: 'POST' })
-      const body = await res.json()
-      if (!res.ok) throw new Error(body.error)
-      // 새로고침은 마지막으로 받은 날짜 이후 새로 공개·등록된 특허만 가져온다
-      setSyncMsg(body.added ? `새 특허 ${body.added.toLocaleString('ko-KR')}건 추가` : '새로 추가된 특허 없음')
-      await loadOverview()
-      setRefreshKey((k) => k + 1)
-    } catch (err) {
-      setError(`새로고침 실패: ${err.message}`)
-    } finally {
-      setSyncing(false)
-    }
-  }
+  // 새 특허는 서버가 마지막 갱신 후 90일(분기)마다 자동으로 받아온다 (backend/src/scheduler.js). 그래서 새로고침 버튼은 없앴다
+  const nextSync = overview?.lastSyncedAt ? new Date(new Date(overview.lastSyncedAt).getTime() + AUTO_SYNC_DAYS * 86_400_000) : null
 
   function handleSearch(e) {
     e.preventDefault()
@@ -90,8 +75,8 @@ export default function App() {
     <div className={`shell ${navOpen ? 'nav-open' : ''}`}>
       <aside className="sidebar" aria-label="메뉴">
         <a className="side-brand" href="#/">
-          <span className="side-logo"><Icon name="layers" /></span>
-          <span className="side-brand-text">DISPLAY<br />INSIGHT</span>
+          <span className="side-avatar side-logo">LG</span>
+          <span className="side-brand-text">LG Display<br /><small>특허 트렌드 센싱</small></span>
         </a>
         <p className="side-section">WORKSPACE</p>
         <nav className="side-menu">
@@ -107,17 +92,12 @@ export default function App() {
         <div className="side-sync">
           <span className="side-sync-label">데이터 마지막 갱신</span>
           <strong>{formatDateTime(overview?.lastSyncedAt)}</strong>
-          {syncMsg && <span className="side-sync-msg" role="status">{syncMsg}</span>}
-          <button onClick={handleSync} disabled={syncing}>
-            <Icon name="refresh" />{syncing ? '갱신 중…' : '새로고침'}
-          </button>
-        </div>
-        <div className="side-foot">
-          <span className="side-avatar">LG</span>
-          <span>
-            <b>특허 트렌드 센싱</b>
-            <small>KIPRIS 공개 데이터</small>
-          </span>
+          {nextSync && (
+            <span className="side-sync-next">
+              <Icon name="refresh" />
+              분기마다 자동 갱신 · 다음 {nextSync.getFullYear()}.{nextSync.getMonth() + 1}.{nextSync.getDate()}쯤
+            </span>
+          )}
         </div>
       </aside>
       {navOpen && <div className="side-scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />}
@@ -148,11 +128,11 @@ export default function App() {
         <main>
           {error && <p className="error page-error">{error}</p>}
           {/* 메뉴를 오가도 모아보기의 필터·펼친 목록이 유지되도록 화면을 지우지 않고 숨긴다 */}
-          <div hidden={route !== 'home'}><HomePage overview={overview} refreshKey={refreshKey} /></div>
-          {route === 'field' && <FieldPage key={hash} scope={scopeOf(hash)} refreshKey={refreshKey} />}
+          <div hidden={route !== 'home'}><HomePage overview={overview} /></div>
+          {route === 'field' && <FieldPage key={hash} scope={scopeOf(hash)} />}
           {route === 'summary' && <SummaryPage scope={scopeOf(hash)} />}
-          {route === 'emerging' && <EmergingPage scope={scopeOf(hash)} refreshKey={refreshKey} />}
-          <div hidden={route !== 'patents'}><PatentsPage refreshKey={refreshKey} search={search} /></div>
+          {route === 'emerging' && <EmergingPage scope={scopeOf(hash)} />}
+          <div hidden={route !== 'patents'}><PatentsPage search={search} /></div>
         </main>
       </div>
     </div>
