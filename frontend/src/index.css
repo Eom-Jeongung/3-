@@ -122,9 +122,9 @@
 }
 .sidebar :focus-visible { outline-color: #fff; }
 .side-brand { display: flex; align-items: center; gap: 12px; padding: 0 8px 22px; color: #fff; text-decoration: none; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
-.side-logo { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; background: rgba(255, 255, 255, 0.12); }
-.side-logo .icon { width: 22px; height: 22px; }
-.side-brand-text { font-size: 15px; font-weight: 700; line-height: 1.15; letter-spacing: 0.04em; }
+.side-avatar.side-logo { width: 40px; height: 40px; font-size: 14px; }
+.side-brand-text { font-size: 16px; font-weight: 700; line-height: 1.25; letter-spacing: 0; }
+.side-brand-text small { font-size: 13px; font-weight: 500; color: rgba(255, 255, 255, 0.72); }
 .side-section { margin: 18px 10px 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; color: rgba(255, 255, 255, 0.45); }
 .side-menu { display: flex; flex-direction: column; gap: 6px; }
 .side-link {
@@ -140,18 +140,8 @@
   background: rgba(124, 79, 240, 0.18); font-size: 12px; color: rgba(255, 255, 255, 0.7);
 }
 .side-sync strong { color: #fff; font-size: 13px; font-weight: 600; }
-.side-sync-msg { color: #fff; font-weight: 600; }
-.side-sync button {
-  display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; padding: 8px 10px;
-  border: 0; border-radius: 8px; background: rgba(255, 255, 255, 0.14); color: #fff; font-size: 13px; font-weight: 600;
-  transition: background 0.15s;
-}
-.side-sync button:hover { background: rgba(255, 255, 255, 0.24); }
-.side-sync button:disabled { opacity: 0.6; cursor: wait; }
-.side-sync .icon { width: 16px; height: 16px; }
-.side-foot { display: flex; align-items: center; gap: 10px; padding: 14px 6px 0; margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.1); font-size: 13px; }
-.side-foot b { display: block; font-weight: 600; }
-.side-foot small { display: block; color: rgba(255, 255, 255, 0.55); font-size: 11px; }
+.side-sync-next { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; color: rgba(255, 255, 255, 0.6); }
+.side-sync .icon { width: 14px; height: 14px; }
 .side-avatar { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: #a50034; font-size: 12px; font-weight: 700; }
 .side-scrim { position: fixed; inset: 0; z-index: 44; background: var(--scrim); }
 
