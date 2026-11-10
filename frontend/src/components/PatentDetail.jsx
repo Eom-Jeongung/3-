@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import PatentSummary from './PatentSummary.jsx'
 
 const TYPE_LABELS = { own: '자사', competitor: '경쟁사', china: '중국 경쟁사' }
 
@@ -148,7 +149,7 @@ export default function PatentDetail({ id, onClose }) {
             )}
 
             <h3>개별 요약</h3>
-            <p className="placeholder-text">AI 모델 선정 후 한 줄 요약, 해결하려는 문제, 핵심 해결 수단, 기존 기술과의 차이, 핵심 키워드가 여기에 표시돼요.</p>
+            <PatentSummary id={id} />
 
             <div className="source-columns">
               <section>

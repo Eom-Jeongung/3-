@@ -2,6 +2,8 @@
 import { Router } from 'express';
 import { db, likePattern } from '../db.js';
 import { fetchClaims } from '../kipris.js';
+import { generatePatentSummary, latestPatentSummary, patentSummaryInput } from '../patentSummary.js';
+import { isAiConfigured } from '../ai.js';
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100; // 전체 8만 건을 한 번에 내려보내지 않도록 상한을 둔다
@@ -130,6 +132,34 @@ router.post('/:id/claims', async (req, res) => {
     db.transaction(() => claims.forEach((c, i) => insert.run(row.application_number, i + 1, c)))();
   }
   res.json({ claims });
+});
+
+// GET /api/patents/:id/summary → 저장된 개별 AI 요약 (없으면 null)과 만들 수 있는지
+// POST /api/patents/:id/summary → AI로 새로 만든다 (청구항은 이미 받아 둔 경우만 쓰고 KIPRIS는 부르지 않는다)
+const summarizing = new Set();
+router.get('/:id/summary', (req, res) => {
+  const { patent, input } = patentSummaryInput(req.params.id);
+  if (!patent) return res.status(404).json({ error: '특허를 찾을 수 없습니다' });
+  res.json({ summary: latestPatentSummary(patent.id) ?? null, aiReady: isAiConfigured(), enoughText: Boolean(input), running: summarizing.has(patent.id) });
+});
+router.post('/:id/summary', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!isAiConfigured()) return res.status(503).json({ error: 'AI 설정이 없어요 (backend/.env 의 AI_BASE_URL, AI_MODEL)' });
+  if (summarizing.has(id)) return res.status(409).json({ error: '이 특허 요약을 이미 만드는 중이에요' });
+  summarizing.add(id);
+  try {
+    res.json({ summary: await generatePatentSummary(id) });
+  } catch (e) {
+    const busy = /HTTP 429/.test(e.message);
+    const slow = /timeout|aborted/i.test(e.message);
+    res.status(e.status ?? (busy || slow ? 503 : 500)).json({
+      error: busy ? 'AI 서버가 바빠요(무료 모델 공용 한도). 잠시 뒤 다시 시도해 주세요.'
+        : slow ? 'AI 응답이 3분 안에 오지 않았어요. 잠시 뒤 다시 시도해 주세요.'
+        : e.message,
+    });
+  } finally {
+    summarizing.delete(id);
+  }
 });
 
 // GET /api/patents/:id
