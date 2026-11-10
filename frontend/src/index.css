@@ -469,3 +469,6 @@ tbody tr:last-child td { border-bottom: 0; }
 .emerging-table tbody th, .emerging-table tbody td { vertical-align: top; }
 .emerging-table tbody th { width: 30%; min-width: 160px; white-space: normal; }
 .emerging-table tbody th .muted { white-space: normal; }
+.patent-summary-body h4 { margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
+.patent-summary-body p { margin: 0 0 4px; line-height: 1.6; }
+.patent-summary .more-btn { margin-bottom: 8px; }

@@ -109,6 +109,20 @@ export function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_trend_summaries_scope ON trend_summaries (level1, level2, level3, period_from, period_to);
 
+    -- 개별 특허 AI 요약 (patentSummary.js). 다시 만들면 새 행으로 쌓이고 화면은 가장 최근 것을 보여 준다
+    CREATE TABLE IF NOT EXISTS patent_summaries (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      patent_id          INTEGER NOT NULL,
+      application_number TEXT NOT NULL,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      model              TEXT,
+      content            TEXT NOT NULL,     -- AI 답 (마크다운)
+      checks             TEXT NOT NULL,     -- 검사 결과 (JSON)
+      used_claim         INTEGER NOT NULL DEFAULT 0, -- 대표 청구항도 입력에 썼는지
+      elapsed_ms         INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_patent_summaries_patent ON patent_summaries (patent_id);
+
     -- 분기 자동 요약 실행 기록 (autoSummary.js). 분기마다 한 번, 실패한 범위는 다음 확인 때 이어서 만든다
     CREATE TABLE IF NOT EXISTS summary_runs (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
