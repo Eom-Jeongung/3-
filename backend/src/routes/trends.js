@@ -22,6 +22,9 @@ router.get('/series', (req, res) => {
   res.json(getSeries({ years, unit, company, level1, level2, level3 }));
 });
 
+const pickRow = ({ term, recentDocs, pastDocs, recentPct, pastPct, growth, isNew, related, patents }) =>
+  ({ term, recentDocs, pastDocs, recentPct, pastPct, growth, isNew, related, patents });
+
 // GET /api/trends/emerging?company=own|competitor|china&level1=&level2=&level3=&months=24
 // 신기술 탐지: 최근 months개월(공개일 기준)에 그 전 4년보다 눈에 띄게 많이 나온 용어. AI 없이 계산한다
 router.get('/emerging', (req, res) => {
@@ -32,8 +35,8 @@ router.get('/emerging', (req, res) => {
   const r = burstTerms({ applicant: company || 'all', level1, level2, level3, recentMonths: months });
   res.json({
     ref: r.ref, recentStart: r.recentStart, pastStart: r.pastStart, recent: r.recent, past: r.past,
-    rows: r.rows.map(({ term, recentDocs, pastDocs, recentPct, pastPct, growth, isNew, related, examples }) =>
-      ({ term, recentDocs, pastDocs, recentPct, pastPct, growth, isNew, related, examples })),
+    rows: r.rows.map(pickRow),
+    early: (r.early ?? []).map(pickRow), // 초기 신호: 과거 0건 → 최근 3건 이상 새 용어
   });
 });
 

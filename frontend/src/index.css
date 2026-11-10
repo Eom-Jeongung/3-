@@ -462,3 +462,10 @@ tbody tr:last-child td { border-bottom: 0; }
 .explorer-link { margin-left: auto; font-size: 14px; }
 .emerging-example { display: block; font-family: inherit; text-align: left; margin: 2px 0; text-decoration: none; }
 .emerging-example:hover { text-decoration: underline; }
+.emerging-subtitle { margin: 20px 0 8px; font-size: 16px; }
+.emerging-subtitle .muted { font-weight: 400; margin-left: 6px; }
+.term-toggle { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted; margin-right: 6px; }
+.term-toggle:hover { color: var(--accent); }
+.emerging-table tbody th, .emerging-table tbody td { vertical-align: top; }
+.emerging-table tbody th { width: 30%; min-width: 160px; white-space: normal; }
+.emerging-table tbody th .muted { white-space: normal; }
