@@ -16,6 +16,7 @@
     "predev": "node -e \"const fs=require('fs'); if(!fs.existsSync('.env')) fs.writeFileSync('.env','')\"",
     "dev": "node --env-file-if-exists=.env --watch src/index.js",
     "start": "node --env-file-if-exists=.env src/index.js",
+    "auto-summary": "node --env-file-if-exists=.env scripts/auto-summary.js",
     "summary-trial": "node --env-file-if-exists=.env scripts/summary-trial.js"
   },
   "keywords": [],

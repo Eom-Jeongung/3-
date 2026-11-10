@@ -161,6 +161,16 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
   return { facts, statText, evidence };
 }
 
+const UNPUBLISHED_MONTHS = 18; // trendData.js와 같은 기준: 출원 후 보통 18개월 뒤 공개
+
+/** 공개가 끝난 마지막 연도 (그 해 12월 31일 출원까지 공개가 끝났다고 볼 수 있는 해). 요약 기본 기간의 끝 */
+export function lastCompleteYear() {
+  const { d } = db.prepare('SELECT MAX(open_date) d FROM patents').get();
+  const cutoff = new Date(d ?? Date.now());
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - UNPUBLISHED_MONTHS);
+  return cutoff.getUTCMonth() === 11 && cutoff.getUTCDate() === 31 ? cutoff.getUTCFullYear() : cutoff.getUTCFullYear() - 1;
+}
+
 const SYSTEM_PROMPT = [
   '너는 디스플레이 기업의 특허 동향을 정리하는 분석가다. 한국어로 쓴다.',
   '규칙:',
@@ -193,7 +203,7 @@ const SYSTEM_PROMPT = [
 const scopeKey = ({ level1 = '', level2 = '', level3 = '' }) => ({ level1: level1 ?? '', level2: level2 ?? '', level3: level3 ?? '' });
 
 /** AI로 요약을 만들고 저장한다. 같은 범위·기간은 새 행으로 쌓인다(이전 요약과 비교할 수 있게) */
-export async function generateTrendSummary({ level1, level2, level3, from, to }) {
+export async function generateTrendSummary({ level1, level2, level3, from, to }, { source = 'manual' } = {}) {
   if (!isAiConfigured()) throw new Error('AI 설정(AI_BASE_URL, AI_MODEL)이 비어 있어요');
   const scope = scopeKey({ level1, level2, level3 });
   const { facts, statText, evidence } = buildSummaryInput({ ...scope, from, to });
@@ -214,10 +224,11 @@ export async function generateTrendSummary({ level1, level2, level3, from, to })
     evidence: JSON.stringify(evidence.map(({ fullText, ...e }) => e)),
     checks: JSON.stringify(checks),
     elapsed_ms: Date.now() - started,
+    source,
   };
   const { lastInsertRowid } = db.prepare(`
-    INSERT INTO trend_summaries (level1, level2, level3, period_from, period_to, criteria_version, model, content, facts, evidence, checks, elapsed_ms)
-    VALUES (@level1, @level2, @level3, @period_from, @period_to, @criteria_version, @model, @content, @facts, @evidence, @checks, @elapsed_ms)
+    INSERT INTO trend_summaries (level1, level2, level3, period_from, period_to, criteria_version, model, content, facts, evidence, checks, elapsed_ms, source)
+    VALUES (@level1, @level2, @level3, @period_from, @period_to, @criteria_version, @model, @content, @facts, @evidence, @checks, @elapsed_ms, @source)
   `).run(row);
   return getSummaryById(lastInsertRowid);
 }

@@ -1,18 +1,7 @@
 import { Router } from 'express';
-import { generateTrendSummary, latestSummary } from '../trendSummary.js';
+import { generateTrendSummary, latestSummary, lastCompleteYear } from '../trendSummary.js';
 import { isAiConfigured } from '../ai.js';
 import { CRITERIA_VERSION } from '../classification.js';
-import { db } from '../db.js';
-
-const UNPUBLISHED_MONTHS = 18; // trendData.js와 같은 기준: 출원 후 보통 18개월 뒤 공개
-
-// 공개가 끝난 마지막 연도 (그 해 12월 31일 출원까지 공개가 끝났다고 볼 수 있는 해)
-function lastCompleteYear() {
-  const { d } = db.prepare('SELECT MAX(open_date) d FROM patents').get();
-  const cutoff = new Date(d ?? Date.now());
-  cutoff.setUTCMonth(cutoff.getUTCMonth() - UNPUBLISHED_MONTHS);
-  return cutoff.getUTCMonth() === 11 && cutoff.getUTCDate() === 31 ? cutoff.getUTCFullYear() : cutoff.getUTCFullYear() - 1;
-}
 
 const router = Router();
 const running = new Set(); // 같은 범위를 동시에 두 번 만들지 않게
