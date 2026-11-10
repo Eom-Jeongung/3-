@@ -144,6 +144,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
       {s && (
         <>
           <p className="table-meta">
+            {s.source === 'auto' && <><b>분기 자동 생성</b> · </>}
             모델 {s.model || '-'} · 분류 기준 {s.criteria_version}
             {stale && <b className="warn-text"> (지금 기준 {state.criteriaVersion}과 달라요. 다시 만들기를 권해요)</b>}
             {' '}· {new Date(`${s.created_at.replace(' ', 'T')}Z`).toLocaleString('ko-KR')}

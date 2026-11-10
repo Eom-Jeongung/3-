@@ -109,6 +109,18 @@ export function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_trend_summaries_scope ON trend_summaries (level1, level2, level3, period_from, period_to);
 
+    -- 분기 자동 요약 실행 기록 (autoSummary.js). 분기마다 한 번, 실패한 범위는 다음 확인 때 이어서 만든다
+    CREATE TABLE IF NOT EXISTS summary_runs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      quarter     TEXT NOT NULL,                 -- 예: 2026-Q4 (한국 시간)
+      started_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      finished_at TEXT,
+      total       INTEGER NOT NULL DEFAULT 0,    -- 만들 범위 수
+      made        INTEGER NOT NULL DEFAULT 0,    -- 이번에 새로 만든 수
+      failed      INTEGER NOT NULL DEFAULT 0,
+      note        TEXT
+    );
+
     -- 데모 v1 범위 밖, 스키마만 미리 설계
     CREATE TABLE IF NOT EXISTS scraps (
       id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,6 +145,8 @@ function migrate() {
   if (!colsOf('ipc_map').includes('level3')) db.exec('ALTER TABLE ipc_map ADD COLUMN level3 TEXT');
   if (!colsOf('keyword_map').includes('requires')) db.exec('ALTER TABLE keyword_map ADD COLUMN requires TEXT');
   allowChinaType();
+  // 요약을 사람이 만들었는지(manual) 분기 자동 생성(auto)인지
+  if (!colsOf('trend_summaries').includes('source')) db.exec("ALTER TABLE trend_summaries ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");
 }
 
 // 중국 경쟁사(applicant_type 'china')를 넣을 수 있게 patents 표를 다시 만든다 (2026-11 추가)

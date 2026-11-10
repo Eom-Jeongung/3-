@@ -283,6 +283,8 @@ npm run dev
 | `npm run collect --prefix backend` | 전체 특허 수집 (처음 한 번, 약 200회 호출) |
 | `npm run classify --prefix backend` | 대응표(`backend/classification/*.csv`)를 DB에 넣고 전체 특허를 다시 분류 (KIPRIS 호출 없음) |
 | `npm run ai-usage --prefix backend` | 최근 30일 AI 호출 수·실패 수·토큰 수 보기 (기록은 DB의 `ai_calls` 테이블) |
+| `npm run auto-summary --prefix backend` | 분기 자동 AI 요약을 지금 만들기 (전체·방식·기술 분야, 이번 분기에 없는 것만). `-- --dry`는 만들 목록만 보기. 서버는 `.env`에 `AUTO_SUMMARY=1`이면 분기마다 스스로 만들어요 |
+| `npm run collect-china --prefix backend` | 중국 경쟁사(BOE·CSOT·Tianma·Visionox) 전체 수집 (KIPRIS 약 8회) |
 | `npm run build` | 시연·배포용 화면 만들기 (`frontend/dist`) |
 | `npm start` | 시연·배포용 실행: 백엔드 하나가 API와 빌드된 화면을 같이 띄움 |
 
