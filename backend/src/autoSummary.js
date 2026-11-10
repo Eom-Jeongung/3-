@@ -66,7 +66,7 @@ export const isAutoSummaryRunning = () => running;
  * 이번 분기에 빠진 범위의 요약을 만든다
  * @returns {Promise<{ quarter: string, total: number, made: number, failed: string[] }>}
  */
-export async function runQuarterlySummaries({ log = console.log, waits = WAIT_MS } = {}) {
+export async function runQuarterlySummaries({ log = console.log, waits = WAIT_MS, all = false } = {}) {
   if (running) throw new Error('이미 자동 요약을 만드는 중이에요');
   running = true;
   const quarter = currentQuarter();
@@ -74,7 +74,9 @@ export async function runQuarterlySummaries({ log = console.log, waits = WAIT_MS
   let made = 0;
   const failed = [];
   try {
-    const todo = pendingScopes(quarter);
+    // all: 프롬프트를 고쳤을 때처럼 이번 분기에 이미 만든 것까지 전부 다시 만든다
+    const to = lastCompleteYear();
+    const todo = all ? autoScopes().map((s) => ({ ...s, from: to - 2, to })) : pendingScopes(quarter);
     const total = autoScopes().length;
     runId = db.prepare('INSERT INTO summary_runs (quarter, total) VALUES (?, ?)').run(quarter.key, total).lastInsertRowid;
     log(`[자동 요약] ${quarter.label}: ${total}개 중 ${todo.length}개를 만듭니다 (${todo[0]?.from ?? '-'}~${todo[0]?.to ?? '-'}년 출원)`);

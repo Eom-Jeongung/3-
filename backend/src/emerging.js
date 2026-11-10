@@ -224,6 +224,17 @@ export function burstTerms(opts = {}) {
   return result;
 }
 
+/** 화면에서 자주 보는 조건(전체 분야, 출원인별, 최근 24개월)을 미리 계산해 둔다. 실패해도 화면에서 다시 계산하므로 무시 */
+export function warmUpEmerging() {
+  const started = Date.now();
+  try {
+    for (const company of ['', 'own', 'competitor', 'china']) burstTerms({ applicant: company || 'all', level1: '', level2: '', level3: '', recentMonths: 24 });
+    console.log(`[신기술 탐지] 미리 계산 끝 (${((Date.now() - started) / 1000).toFixed(0)}초)`);
+  } catch (err) {
+    console.error(`[신기술 탐지] 미리 계산 실패: ${err.message}`);
+  }
+}
+
 function computeBurstTerms({
   applicant = 'all', level1 = '', level2 = '', level3 = '', recentMonths = 24, pastMonths = 48, ref = '',
   dateField = 'open_date', recentFrom = '', pastFrom = '',

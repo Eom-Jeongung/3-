@@ -19,7 +19,7 @@ if (!isAiConfigured()) {
 
 console.log(`요약 대상: ${scopeLabel(scope)}, ${scope.from}~${scope.to}년`);
 const s = await generateTrendSummary(scope);
-const { strangeNumbers, strangePatents, mixups, unsupported = [], overreach = [], missingSections } = s.checks;
+const { strangeNumbers, strangePatents, mixups, unsupported = [], overreach = [], missingSections, wrongReasons = [] } = s.checks;
 const list = (a) => (a.length ? a.join(' / ') : '없음');
 const checkLines = [
   `- 자료에 없는 숫자: ${list(strangeNumbers)}`,
@@ -28,6 +28,8 @@ const checkLines = [
   `- 초록에 없는 효과: ${list(unsupported)}`,
   `- 과한 해석: ${list(overreach)}`,
   `- 빠진 칸(답이 잘렸을 수 있음): ${list(missingSections)}`,
+  `- 선정 이유 불일치: ${list(wrongReasons)}`,
+  `- 길이: ${list(s.checks.formatIssues ?? [])}`,
 ];
 fs.writeFileSync(OUT, [
   `# 동향 요약: ${scopeLabel(scope)}, ${scope.from}~${scope.to}년`,

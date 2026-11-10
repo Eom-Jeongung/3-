@@ -7,7 +7,7 @@ export const SECTIONS = ['핵심 흐름', '성장 분야', '경쟁사 동향', '
 // 특허 설명에 붙이기 쉬운 효과 말. 그 특허 초록에 없으면 AI가 덧붙인 것
 const EFFECT_WORDS = ['신뢰성', '내구성', '수명', '광효율', '발광 효율', '고해상도', '정밀화', '화질', '시인성', '투과율', '소비전력', '생산성', '수율', '원가', '박형화'];
 // 회사 의도나 산업 단계를 단정하는 말 (프롬프트에서 금지)
-const OVERREACH = ['성숙 단계', '성숙기', '전략', '주력', '집중 투자', '경쟁 심화', '본격화', '선점', '시장 점유', '시장 확대', '중단', '동력', '위축', '관심이 줄', '관심이 감소'];
+const OVERREACH = ['성숙 단계', '성숙기', '전략', '주력', '집중 투자', '경쟁 심화', '본격화', '선점', '시장 점유', '시장 확대', '중단', '동력', '위축', '관심이 줄', '관심이 감소', '핵심 분야', '핵심 연구', '핵심 기술로', '지속적으로 투자', '지속 투자', '집중하는', '집중하고'];
 
 const STOP = new Set(['자사', '경쟁사', 'LG디스플레이', '삼성디스플레이', '중심', '중국', 'BOE', 'CSOT', 'Tianma', 'Visionox', '출원', '특허', '기술', '구조', '분야', '증가', '감소',
   '포함', '구현', '확보', '향상', '동시', '배치', '적용', '형성', '지속', '표시', '장치', '디스플레이', '방지', '개선', '강화', '최적화',
@@ -65,7 +65,7 @@ export function checkSummary(answer, statText, evidence) {
         const text = stripReason(sentence.replace(/\d{13}/g, ' '));
         const foreign = termsOf(text).filter((w) => isForeignTo(w, cited));
         if (foreign.length) mixups.push(`${cited.map((e) => e.number).join(', ')}: 인용한 특허에 없고 다른 근거 특허에 있는 말: ${foreign.join(', ')}`);
-        const missing = effectsMissing(text, cited);
+        const missing = /해석/.test(line) ? [] : effectsMissing(text, cited); // 해석 문장은 추정이라 효과 검사에서 뺀다
         if (missing.length) unsupported.push(`${cited.map((e) => e.number).join(', ')}: ${missing.join(', ')}`);
       }
       continue;
@@ -100,5 +100,21 @@ export function checkSummary(answer, statText, evidence) {
   // 5. 과한 해석: 회사 의도·산업 단계를 단정하는 말
   const overreach = answer.split('\n').filter((l) => OVERREACH.some((w) => l.includes(w)))
     .map((l) => `${OVERREACH.filter((w) => l.includes(w)).join(', ')}: ${l.replace(/^[-*\s]+/, '').slice(0, 60)}…`);
-  return { strangeNumbers: [...strangeNumbers], strangePatents, mixups, unsupported, overreach, missingSections };
+  // 6. 선정 이유: 특허 뒤 괄호의 선정 이유가 그 특허의 실제 선정 이유와 같은지 (다른 특허 이유를 붙인 적이 있다)
+  const squeezeQ = (t) => squeeze(t).replace(/["“”'‘’]/g, '');
+  const wrongReasons = [];
+  for (const line of answer.split('\n')) {
+    const cites = [...line.matchAll(/\d{13}/g)].map((m) => byNumber.get(m[0])).filter(Boolean);
+    if (cites.length !== 1 || !cites[0].reason) continue;
+    for (const [, inside] of line.matchAll(/\(([^()]*(?:급증 용어|증감이 큰 분야)[^()]*)\)/g)) {
+      if (!squeezeQ(inside).includes(squeezeQ(cites[0].reason))) wrongReasons.push(`${cites[0].number}: "${inside}" (실제 선정 이유: ${cites[0].reason})`);
+    }
+  }
+  // 7. 길이: 한 화면 안에 읽히게 (주목 특허 6건 이하, 전체 1,600자 이하)
+  const formatIssues = [];
+  const notable = answer.split(/^##\s*주목 특허.*$/m)[1]?.split(/^##/m)[0] ?? '';
+  const notableCount = notable.split('\n').filter((l) => /\d{13}/.test(l)).length;
+  if (notableCount > 6) formatIssues.push(`주목 특허 ${notableCount}건 (5건 안팎이어야 함)`);
+  if (answer.length > 1600) formatIssues.push(`전체 ${answer.length}자 (1,600자 이하여야 함)`);
+  return { strangeNumbers: [...strangeNumbers], strangePatents, mixups, unsupported, overreach, missingSections, wrongReasons, formatIssues };
 }
