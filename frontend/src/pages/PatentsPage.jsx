@@ -17,8 +17,13 @@ const queryOf = (filters, sort) => {
   return q
 }
 
-export default function PatentsPage({ refreshKey }) {
+export default function PatentsPage({ refreshKey, search }) {
   const [filters, setFilters] = useState(EMPTY_FILTERS)
+
+  // 상단 검색창에서 찾으면 다른 필터를 풀고 그 검색어로 목록을 다시 받는다
+  useEffect(() => {
+    if (search) setFilters({ ...EMPTY_FILTERS, q: search.q })
+  }, [search])
   const [sort, setSort] = useState({ key: 'open_date', order: 'desc' })
   const [classification, setClassification] = useState([]) // 기술 분야 필터 선택지
   const [optionsError, setOptionsError] = useState(null)
