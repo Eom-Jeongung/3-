@@ -10,6 +10,7 @@ import techCategoriesRouter from './routes/techCategories.js';
 import trendsRouter from './routes/trends.js';
 import summariesRouter from './routes/summaries.js';
 import { startScheduler } from './scheduler.js';
+import { warmUpEmerging } from './emerging.js';
 
 initSchema();
 
@@ -36,4 +37,6 @@ app.listen(port, () => {
   console.log(`API 서버: http://localhost:${port}`);
   if (serveScreen) console.log(`화면(빌드본): http://localhost:${port}`);
   startScheduler();
+  // 신기술 탐지는 처음 계산이 10초 넘게 걸려서, 서버가 켜지고 잠시 뒤 자주 보는 조건을 미리 계산해 둔다
+  setTimeout(() => warmUpEmerging(), 5_000).unref();
 });

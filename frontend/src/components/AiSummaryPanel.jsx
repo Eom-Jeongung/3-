@@ -30,7 +30,9 @@ function SummaryBody({ content, evidence, onOpen }) {
       blocks.push(<h4 key={blocks.length}>{line.replace(/^#+\s*/, '')}</h4>)
     } else if (/^[-*]\s+/.test(line)) {
       if (!list) { list = []; blocks.push(<ul key={blocks.length}>{list}</ul>) }
-      list.push(<li key={list.length}><Inline text={line.replace(/^[-*]\s+/, '')} evidence={evidence} onOpen={onOpen} /></li>)
+      const text = line.replace(/^[-*]\s+/, '')
+      // "- 해석: …" 줄도 추정 문장이라 표시를 다르게 한다
+      list.push(<li key={list.length} className={/^\**해석/.test(text) ? 'ai-interpretation' : undefined}><Inline text={text} evidence={evidence} onOpen={onOpen} /></li>)
     } else {
       list = null
       const isNote = /^\**해석/.test(line)
@@ -47,6 +49,8 @@ const CHECKS = [
   ['unsupported', '특허 초록에 없는 효과를 덧붙였을 수 있음'],
   ['overreach', '근거보다 강한 해석(회사 의도·산업 단계 단정)'],
   ['missingSections', '빠진 칸(답이 잘렸을 수 있음)'],
+  ['wrongReasons', '주목 특허에 다른 특허의 선정 이유를 붙임'],
+  ['formatIssues', '너무 김(한 화면 분량을 넘음)'],
 ]
 
 const FIRST_YEAR = 2000 // 기간 목록의 첫해
@@ -150,7 +154,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
             {' '}· {new Date(`${s.created_at.replace(' ', 'T')}Z`).toLocaleString('ko-KR')}
           </p>
           {issues.length === 0
-            ? <p className="check-ok">자동 검사 통과: 자료에 없는 숫자·출원번호, 특허 내용 섞임, 초록에 없는 효과, 과한 해석, 빠진 칸 없음</p>
+            ? <p className="check-ok">자동 검사 통과: 자료에 없는 숫자·출원번호, 특허 내용 섞임, 초록에 없는 효과, 과한 해석, 빠진 칸, 선정 이유 불일치 없음</p>
             : (
               <div className="check-warn">
                 <b>자동 검사에서 확인이 필요한 부분이 있어요</b>
