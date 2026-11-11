@@ -675,3 +675,20 @@ tbody tr:last-child td { border-bottom: 0; }
   .company-rows li { grid-template-columns: minmax(48px, 1fr) 34px 64px 54px; gap: 8px; }
   .change-badge { min-width: 50px; padding: 3px 4px; }
 }
+
+/* ---- 분류별 비교 (분야마다 작은 그래프, 그 안에서 자사 vs 경쟁사) ---- */
+.compare-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-top: 6px; }
+.compare-panel { margin: 0; min-width: 0; padding: 14px 14px 6px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.compare-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.compare-head > a, .compare-head > span:first-child { font-size: 15px; font-weight: 700; color: var(--text); text-decoration: none; }
+.compare-head > a:hover { color: var(--accent); text-decoration: underline; }
+.compare-change { display: flex; gap: 8px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tone-text-own { color: var(--own); }
+.tone-text-competitor { color: var(--competitor); }
+.tone-text-china { color: var(--china); }
+.compare-box { position: relative; height: 170px; touch-action: pan-y; }
+.compare-box svg { display: block; }
+.compare-box .chart-tip { top: 8px; min-width: 120px; }
+.chip-tone { display: inline-flex; align-items: center; gap: 6px; }
+.chip-tone:not(.active) { opacity: 0.6; }
+.chip-tone.active .dot { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8); }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import PatentDetail from './PatentDetail.jsx'
 import TrendChart, { chartMax, seriesColor } from './TrendChart.jsx'
 import AiSummaryPanel from './AiSummaryPanel.jsx'
+import CompareChart, { COMPANY_LABELS } from './CompareChart.jsx'
 
 const EVIDENCE_COLUMNS = ['출원번호', '발명의 명칭', '출원인', '공개일', '상태', '선정 이유']
 // 1020230116992 -> 10-2023-0116992
@@ -15,6 +16,9 @@ const COMPANY_OPTIONS = [
   { value: 'competitor', label: '삼성' },
   { value: 'china', label: '중국 4사' },
 ]
+// 보기: 분야별 비교(분야마다 작은 그래프, 그 안에서 자사 vs 경쟁사 — PRD v3) / 회사별 추이(회사마다 그래프, 그 안에서 분야별 선)
+const VIEWS = [{ value: 'field', label: '분야별 비교' }, { value: 'company', label: '회사별 추이' }]
+const ALL_COMPANIES = ['own', 'competitor', 'china']
 const COMPANY_NAMES = { own: '자사 (엘지디스플레이)', competitor: '경쟁사 (삼성디스플레이)', china: '중국 경쟁사 (BOE·CSOT·Tianma·Visionox 합계)' }
 const COMPANY_SHORT = { own: '자사', competitor: '삼성', china: '중국 4사' }
 const NOT_FIELD = ['미분류', '그 외']
@@ -34,7 +38,9 @@ export function fieldHref(scope, groupLevel, group) {
 export default function TrendSection({ scope = {}, refreshKey, showAiSummary = true }) {
   const [years, setYears] = useState(5)
   const [unit, setUnit] = useState('year')
-  const [company, setCompany] = useState('')
+  const [view, setView] = useState('field')
+  const [company, setCompany] = useState('') // 회사별 추이 보기에서 고른 출원인
+  const [shown, setShown] = useState(ALL_COMPANIES) // 분야별 비교 보기에서 겹쳐 볼 회사
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [showTable, setShowTable] = useState(false)
@@ -44,7 +50,8 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
   useEffect(() => {
     let cancelled = false
     const q = new URLSearchParams({ years, unit })
-    if (company) q.set('company', company)
+    // 분야별 비교는 세 회사를 함께 그려야 해서 출원인을 거르지 않는다
+    if (company && view === 'company') q.set('company', company)
     if (level1) q.set('level1', level1)
     if (level2) q.set('level2', level2)
     if (level3) q.set('level3', level3)
@@ -53,7 +60,10 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
       .then((body) => { if (!cancelled) { setData(body); setError(null) } })
       .catch((e) => { if (!cancelled) setError(e.message) })
     return () => { cancelled = true }
-  }, [years, unit, company, level1, level2, level3, refreshKey])
+  }, [years, unit, company, view, level1, level2, level3, refreshKey])
+
+  // 겹쳐 볼 회사 켜고 끄기 (하나는 남긴다)
+  const toggleShown = (c) => setShown((s) => (s.includes(c) ? (s.length > 1 ? s.filter((x) => x !== c) : s) : ALL_COMPANIES.filter((x) => x === c || s.includes(x))))
 
   const summary = data?.summary
   // 자사·삼성은 같은 눈금으로 비교하고, 건수가 훨씬 적은 중국 4사는 따로 눈금을 잡는다 (같은 눈금이면 바닥에 붙어 안 보인다)
@@ -67,6 +77,12 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
       <h2 id="trend-title" className="card-title">{[level1, level2, level3].filter(Boolean).join(' › ') || '전체 분야'} 출원 추이</h2>
 
       <div className="trend-controls">
+        <div className="filter-group">
+          <span className="filter-label">보기</span>
+          {VIEWS.map((v) => (
+            <button key={v.value} className={`chip ${view === v.value ? 'active' : ''}`} aria-pressed={view === v.value} onClick={() => setView(v.value)}>{v.label}</button>
+          ))}
+        </div>
         <label className="filter-group">
           <span className="filter-label">기간</span>
           <select className="filter-input" value={years} onChange={(e) => setYears(Number(e.target.value))}>
@@ -79,19 +95,56 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
             <button key={u.value} className={`chip ${unit === u.value ? 'active' : ''}`} aria-pressed={unit === u.value} onClick={() => setUnit(u.value)}>{u.label}</button>
           ))}
         </div>
-        <div className="filter-group">
-          <span className="filter-label">출원인</span>
-          {COMPANY_OPTIONS.map((c) => (
-            <button key={c.value} className={`chip ${company === c.value ? 'active' : ''}`} aria-pressed={company === c.value} onClick={() => setCompany(c.value)}>{c.label}</button>
-          ))}
-        </div>
+        {view === 'company' ? (
+          <div className="filter-group">
+            <span className="filter-label">출원인</span>
+            {COMPANY_OPTIONS.map((c) => (
+              <button key={c.value} className={`chip ${company === c.value ? 'active' : ''}`} aria-pressed={company === c.value} onClick={() => setCompany(c.value)}>{c.label}</button>
+            ))}
+          </div>
+        ) : (
+          <div className="filter-group">
+            <span className="filter-label">비교 대상</span>
+            {ALL_COMPANIES.map((c) => (
+              <button key={c} className={`chip chip-tone tone-${c} ${shown.includes(c) ? 'active' : ''}`} aria-pressed={shown.includes(c)} onClick={() => toggleShown(c)}>
+                <i className={`dot tone-${c}`} />{COMPANY_LABELS[c]}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {error && <p className="error">추이를 불러오지 못했습니다: {error}</p>}
       {!data && !error && <p className="placeholder-text">그래프를 불러오는 중…</p>}
 
+      {data && view === 'field' && (
+        <>
+          <div className="compare-grid">
+            {data.groups.map((g) => (
+              <CompareChart
+                key={g}
+                title={g}
+                href={canDrill(g) ? fieldHref(scope, data.groupLevel, g) : null}
+                periods={data.periods}
+                series={Object.fromEntries(data.companies.map((c) => [c, data.series[c][g]]))}
+                companies={shown.filter((c) => data.companies.includes(c))}
+                summaryRow={summary?.rows.find((r) => r.group === g)}
+                summaryRange={summary ? `${summary.from} → ${summary.to}` : ''}
+              />
+            ))}
+          </div>
+          <p className="footnote">
+            분야마다 작은 그래프 하나에 회사별 선을 겹쳐 그렸어요. 분야마다 건수 차이가 커서 <b>눈금은 그래프마다 달라요</b>.
+            제목 옆 %는 {summary ? `${summary.from} → ${summary.to}` : '공개가 끝난 구간끼리'} 출원 증감이고, 시작 구간이 {data.minCount}건 미만이면 '-'로 표시해요.
+            {data.cutoff.replaceAll('-', '.')} 이후 출원은 아직 다 공개되지 않아 음영과 점선으로 표시했어요. 분야 이름을 누르면 한 단계 아래로 내려가요.
+            중국 4사는 한국에 낸 출원만이라 실제 규모보다 작게 보여요.
+          </p>
+        </>
+      )}
+
       {data && (
         <>
+          {view === 'company' && (<>
           <ul className="chart-legend" aria-label="범례">
             {data.groups.map((g) => (
               <li key={g}>
@@ -113,6 +166,7 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
             자사와 삼성 그래프는 눈금이 같고, 중국 4사는 건수가 훨씬 적어 눈금을 따로 잡았어요. 분류는 규칙 기반 자동 분류예요(무작위 검증 정확도 약 85%).
             중국 4사는 한국에 낸 출원만이라 실제 출원 규모보다 작게 보여요.
           </p>
+          </>)}
 
           {data.chinaByCompany && (
             <div className="table-wrap chart-table">
