@@ -235,7 +235,7 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
                   ))}
                 </ul>
               )}
-              <p className="ask-note">DB 숫자로 만든 규칙 기반 요약이에요. 그래프에서 고른 기간 기준이에요.</p>
+              <p className="footnote">DB 숫자로 만든 규칙 기반 요약이에요. 그래프에서 고른 기간 기준이에요.</p>
             </div>
 
             {summary && (

@@ -1,4 +1,4 @@
-// 새로고침(증분 수집) 실행: npm run sync — 화면의 새로고침 버튼과 같은 동작
+// 새 특허만 받기(증분 수집) 실행: npm run sync — 서버의 90일 자동 갱신과 같은 동작을 지금 바로 한다
 // DB가 비어 있으면 먼저 npm run collect로 전체 수집을 해야 한다
 import { runSync } from '../src/sync.js';
 import { db } from '../src/db.js';

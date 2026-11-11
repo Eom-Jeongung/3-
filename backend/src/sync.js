@@ -1,8 +1,7 @@
 // 수집·가공·저장 파이프라인
-// 화면의 새로고침 버튼(manual) + 자동 갱신(scheduled, src/scheduler.js)이 같이 쓴다
+// 수동 갱신(npm run sync, POST /api/sync) + 자동 갱신(scheduled, src/scheduler.js)이 같이 쓴다
 import { db, initSchema } from './db.js';
 import { searchPatents, APPLICANTS, CHINA_APPLICANTS } from './kipris.js';
-import { classifyTech } from './classify.js';
 import { classifyPatents, hasCriteria } from './classification.js';
 
 // ---- 날짜 유틸 ----
@@ -25,7 +24,7 @@ export function calcExpiryDate(applicationNumber, applicationDate, legalStatus) 
 
 export function normalize(item, applicantType, syncedAt) {
   const applicationDate = toIsoDate(item.applicationDate);
-  const row = {
+  return {
     application_number: item.applicationNumber,
     applicant_name: item.applicantName,
     applicant_type: applicantType,
@@ -42,36 +41,28 @@ export function normalize(item, applicantType, syncedAt) {
     big_drawing_url: item.bigDrawing || null,
     last_synced_at: syncedAt,
   };
-  return { ...row, tech_category: classifyTech(row) };
 }
 
 const upsert = db.prepare(`
   INSERT INTO patents (
     application_number, applicant_name, applicant_type, title, application_date, registration_date,
-    register_number, open_date, legal_status, ipc_codes, expiry_date, tech_category, abstract, drawing_url, big_drawing_url, last_synced_at
+    register_number, open_date, legal_status, ipc_codes, expiry_date, abstract, drawing_url, big_drawing_url, last_synced_at
   ) VALUES (
     @application_number, @applicant_name, @applicant_type, @title, @application_date, @registration_date,
-    @register_number, @open_date, @legal_status, @ipc_codes, @expiry_date, @tech_category, @abstract, @drawing_url, @big_drawing_url, @last_synced_at
+    @register_number, @open_date, @legal_status, @ipc_codes, @expiry_date, @abstract, @drawing_url, @big_drawing_url, @last_synced_at
   )
   ON CONFLICT (application_number) DO UPDATE SET
     applicant_name = excluded.applicant_name, title = excluded.title,
     registration_date = excluded.registration_date, register_number = excluded.register_number,
     open_date = excluded.open_date, legal_status = excluded.legal_status, ipc_codes = excluded.ipc_codes,
-    expiry_date = excluded.expiry_date, tech_category = excluded.tech_category, abstract = excluded.abstract, drawing_url = excluded.drawing_url, big_drawing_url = excluded.big_drawing_url,
+    expiry_date = excluded.expiry_date, abstract = excluded.abstract, drawing_url = excluded.drawing_url, big_drawing_url = excluded.big_drawing_url,
     last_synced_at = excluded.last_synced_at, updated_at = datetime('now')
   -- 바뀐 항목이 있을 때만 갱신 (증분 저장)
   WHERE patents.legal_status IS NOT excluded.legal_status
      OR patents.registration_date IS NOT excluded.registration_date
      OR patents.expiry_date IS NOT excluded.expiry_date
      OR patents.title IS NOT excluded.title
-     OR patents.tech_category IS NOT excluded.tech_category
      OR patents.big_drawing_url IS NOT excluded.big_drawing_url
-`);
-const upsertStat = db.prepare(`
-  INSERT INTO tech_category_stats (tech_category, applicant_type, total_count, query, synced_at)
-  VALUES (@tech_category, @applicant_type, @total_count, @query, @synced_at)
-  ON CONFLICT (tech_category, applicant_type) DO UPDATE SET
-    total_count = excluded.total_count, query = excluded.query, synced_at = excluded.synced_at
 `);
 const touch = db.prepare('UPDATE patents SET last_synced_at = ? WHERE application_number = ?');
 export const logRun = db.prepare('INSERT INTO sync_log (source, records_fetched, records_changed, status) VALUES (?, ?, ?, ?)');
@@ -98,7 +89,6 @@ const OVERLAP_DAYS = 30; // KIPRIS에 늦게 올라오는 건을 놓치지 않�
 const PAGE_SIZE = 500;
 const latestDates = db.prepare('SELECT MAX(open_date) open, MAX(registration_date) reg FROM patents WHERE applicant_type = ?');
 const exists = db.prepare('SELECT 1 FROM patents WHERE application_number = ?');
-const countByType = db.prepare('SELECT COUNT(*) n FROM patents WHERE applicant_type = ?');
 
 // 수동·자동 갱신이 동시에 돌지 않게 하는 표시
 let running = false;
@@ -149,12 +139,6 @@ async function runSyncOnce({ source = 'manual', useCache = false, log = () => {}
     const changed = saveRows(rows, syncedAt);
     // 새로 받은 특허도 바로 필터에 잡히도록 분류한다 (받은 건만 다시 계산)
     if (hasCriteria()) classifyPatents({ numbers: rows.map((r) => r.application_number) });
-    // 비중(%) 계산용 회사별 전체 건수: 전체 수집 이후로는 DB 건수가 곧 KIPRIS 전체 건수 (API 호출 불필요)
-    db.transaction(() => {
-      for (const type of Object.keys(APPLICANTS)) {
-        upsertStat.run({ tech_category: '전체', applicant_type: type, total_count: countByType.get(type).n, query: '', synced_at: syncedAt });
-      }
-    })();
     logRun.run(source, rows.length, changed, 'success');
     return { fetched: rows.length, added, changed, calls, syncedAt };
   } catch (err) {

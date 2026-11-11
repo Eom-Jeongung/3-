@@ -164,7 +164,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
           <div className="ai-summary-body">
             <SummaryBody content={s.content} evidence={s.evidence} onOpen={onOpenPatent} />
           </div>
-          <p className="ask-note">
+          <p className="footnote">
             AI가 DB 숫자와 근거 특허만 보고 쓴 초안이에요. "해석:" 문장은 추정이니 근거 특허를 눌러 확인해 주세요.
           </p>
           <button className="more-link" onClick={() => setShowFacts((v) => !v)} aria-expanded={showFacts}>

@@ -1,4 +1,4 @@
-// patents / sync_log / scraps 테이블 생성 (여러 번 실행해도 안전)
+// DB 테이블 생성 (여러 번 실행해도 안전). 만든 테이블과 컬럼을 출력한다
 import { db, initSchema } from '../src/db.js';
 
 initSchema();

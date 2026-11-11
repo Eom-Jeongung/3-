@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 import { initSchema } from './db.js';
 import patentsRouter from './routes/patents.js';
 import syncRouter from './routes/sync.js';
-import techCategoriesRouter from './routes/techCategories.js';
 import trendsRouter from './routes/trends.js';
 import summariesRouter from './routes/summaries.js';
 import { startScheduler } from './scheduler.js';
@@ -19,7 +18,6 @@ app.use(express.json());
 
 app.use('/api/patents', patentsRouter);
 app.use('/api/sync', syncRouter);
-app.use('/api/tech-categories', techCategoriesRouter);
 app.use('/api/trends', trendsRouter);
 app.use('/api/summaries', summariesRouter);
 

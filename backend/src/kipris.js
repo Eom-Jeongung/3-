@@ -26,9 +26,6 @@ export const CHINA_APPLICANTS = [
   { company: 'Visionox', query: '비젼녹스', match: /비젼녹스/ }, // 쿤산 고-비젼녹스, 허페이 비젼녹스 등
 ];
 
-/** 출원인 이름 → 중국 경쟁사 이름 (아니면 null) */
-export const chinaCompanyOf = (applicantName) => CHINA_APPLICANTS.find((c) => c.match.test(applicantName ?? ''))?.company ?? null;
-
 // lastvalue 파라미터의 상태 코드
 export const STATUS_CODES = { 공개: 'A', 취하: 'C', 소멸: 'F', 포기: 'G', 무효: 'I', 거절: 'J', 등록: 'R' };
 

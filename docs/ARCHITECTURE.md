@@ -196,9 +196,10 @@ App.jsx  사이드바 · 상단 검색 · 화면 전환
 | `patent_summaries` | 개별 특허 요약 (다시 만들어도 이전 것을 남김) |
 | `ai_calls` | 모든 AI 호출 기록. 용도, 모델, 입력·출력 토큰, 걸린 시간, 오류 |
 
-### 안 쓰는 테이블
+### 예전 DB에만 남은 테이블
 
-`tech_category_stats`, `scraps`, `ask_log`는 데모 v1과 지금은 뺀 AI 질문 기능에서 남은 것임. 지금 화면에서는 안 씀.
+`tech_category_stats`, `scraps`, `ask_log` 테이블과 `patents.tech_category` 칸은 데모 v1과 지금은 뺀 AI 질문 기능에서 쓰던 것임.
+코드에서는 지웠기 때문에 새로 만드는 DB에는 생기지 않음. 이미 있는 DB에는 데이터를 지우지 않으려고 그대로 둠.
 
 ### 원본과 분류를 나눈 이유
 
@@ -221,8 +222,6 @@ App.jsx  사이드바 · 상단 검색 · 화면 전환
 | `GET /api/summaries` | 저장된 AI 동향 요약 | `level1~3`, `from`, `to` (빼면 최근 3개 연도) |
 | `POST /api/summaries` | AI 동향 요약 새로 만들기 | 같은 조건을 body로 |
 | `POST /api/sync` | 새 특허 받기 | 화면 버튼은 없앴고 자동 갱신이 대신함 |
-
-`/api/tech-categories/compare`는 데모 v1에서 남은 것으로 지금 화면에서는 안 씀.
 
 ## 7. 설계하면서 정한 것들
 
@@ -297,7 +296,3 @@ SQLite 전용 문법(`datetime('now')`, `AUTOINCREMENT`, `INSERT OR REPLACE`, `?
 ### 형태소 분석 (필요하면)
 
 신기술 탐지의 용어 뽑기는 지금 조사·어미를 떼는 규칙임. 정확도를 더 올려야 하면 형태소 분석기를 쓰는 작은 Python 서비스를 붙이는 방법이 있음.
-
-### 남은 v1 코드 정리
-
-`classify.js`, `routes/techCategories.js`, 안 쓰는 테이블 3개는 지워도 되는지 확인한 뒤 정리할 예정임.

@@ -27,7 +27,6 @@ export function initSchema() {
       legal_status       TEXT NOT NULL,                     -- registerStatus 원문 (공개/등록/소멸/거절 등)
       ipc_codes          TEXT,                              -- ipcNumber, '|' 구분 원문
       expiry_date        TEXT,                              -- 계산값: 특허 출원일+20년, 실용신안 +10년
-      tech_category      TEXT NOT NULL DEFAULT '미분류',     -- 대형OLED/P-OLED/차량용/폴더블·탠덤/미분류
       abstract           TEXT,                              -- astrtCont
       drawing_url        TEXT,                              -- drawing (대표도면 썸네일, 100x100)
       big_drawing_url    TEXT,                              -- bigDrawing (대표도면 원본, 확대 팝업용)
@@ -53,22 +52,11 @@ export function initSchema() {
       status          TEXT NOT NULL
     );
 
-    -- 기술분야별 전체 포트폴리오 건수 (KIPRIS 초록 키워드 검색 totalCount)
-    -- 샘플 100건만으로는 분야 비교가 불가능해 추가한 테이블
-    CREATE TABLE IF NOT EXISTS tech_category_stats (
-      tech_category  TEXT NOT NULL,
-      applicant_type TEXT NOT NULL CHECK (applicant_type IN ('own', 'competitor')),
-      total_count    INTEGER NOT NULL,
-      query          TEXT NOT NULL,
-      synced_at      TEXT NOT NULL,
-      PRIMARY KEY (tech_category, applicant_type)
-    );
-
-    -- AI 호출 기록: 크레딧이 어디에 쓰였는지 보려고 남긴다 (질문·답변 내용은 ask_log에)
+    -- AI 호출 기록: 크레딧이 어디에 쓰였는지 보려고 남긴다
     CREATE TABLE IF NOT EXISTS ai_calls (
       id                INTEGER PRIMARY KEY AUTOINCREMENT,
       called_at         TEXT NOT NULL DEFAULT (datetime('now')),
-      purpose           TEXT NOT NULL,   -- ask-plan(질문 해석), ask-answer(답변 작성) 등
+      purpose           TEXT NOT NULL,   -- trend-summary(동향 요약), patent-summary(개별 특허 요약) 등
       host              TEXT,            -- AI_BASE_URL의 주소 부분 (키는 저장하지 않음)
       model             TEXT NOT NULL,
       prompt_tokens     INTEGER,         -- AI 서버가 알려준 경우만
@@ -77,18 +65,6 @@ export function initSchema() {
       error             TEXT             -- 성공이면 NULL
     );
     CREATE INDEX IF NOT EXISTS idx_ai_calls_called_at ON ai_calls (called_at);
-
-    -- AI 질문 기록: 하루 한도 계산과 이상한 답이 나왔을 때 원인 찾기용
-    CREATE TABLE IF NOT EXISTS ask_log (
-      id       INTEGER PRIMARY KEY AUTOINCREMENT,
-      asked_at TEXT NOT NULL DEFAULT (datetime('now')),
-      question TEXT NOT NULL,
-      plan     TEXT,                     -- AI가 해석한 질문 (JSON)
-      answer   TEXT,
-      source   TEXT,                     -- ai(AI 문장) / template(조회 결과 그대로) / none(답할 수 없는 질문)
-      error    TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_ask_log_asked_at ON ask_log (asked_at);
 
     -- AI 동향 요약 (trendSummary.js). 같은 범위·기간도 새 행으로 쌓아 이전 요약과 비교한다
     CREATE TABLE IF NOT EXISTS trend_summaries (
@@ -135,13 +111,6 @@ export function initSchema() {
       note        TEXT
     );
 
-    -- 데모 v1 범위 밖, 스키마만 미리 설계
-    CREATE TABLE IF NOT EXISTS scraps (
-      id        INTEGER PRIMARY KEY AUTOINCREMENT,
-      patent_id INTEGER NOT NULL REFERENCES patents(id) ON DELETE CASCADE,
-      saved_at  TEXT NOT NULL DEFAULT (datetime('now')),
-      note      TEXT
-    );
   `);
   db.exec(fs.readFileSync(new URL('../sql/classification.sql', import.meta.url), 'utf8'));
 }

@@ -171,13 +171,12 @@
 .page-title { margin: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: clamp(26px, 3vw, 32px); line-height: 1.2; font-weight: 800; letter-spacing: -0.035em; }
 .hero-sm .page-title { font-size: clamp(26px, 3vw, 32px); }
 .period, .page-desc { margin: 8px 0 0; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.hero-btn, .head-btn {
+.head-btn {
   display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 10px;
   background: var(--surface); border: 1px solid var(--hairline); color: var(--text); box-shadow: var(--shadow-card);
   font-size: 14px; font-weight: 600; text-decoration: none; transition: border-color 0.15s, color 0.15s;
 }
-.hero-btn { margin-top: 16px; }
-.hero-btn:hover, .head-btn:hover { border-color: var(--accent); color: var(--accent); }
+.head-btn:hover { border-color: var(--accent); color: var(--accent); }
 .head-btn .icon { width: 18px; height: 18px; }
 .live-badge {
   display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
@@ -286,20 +285,6 @@ body { margin: 0; background: var(--bg); }
 button { font: inherit; letter-spacing: inherit; color: inherit; cursor: pointer; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
-/* ---- 기술 분야 바로가기 (선 아이콘 줄) ---- */
-.shortcuts {
-  max-width: 1280px; margin: 0 auto; padding: 44px 24px 12px;
-  display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;
-}
-.shortcut {
-  display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px 4px;
-  color: var(--text); text-decoration: none; font-size: 17px; text-align: center; word-break: keep-all;
-  transition: color 0.15s;
-}
-.shortcut svg { width: 56px; height: 56px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.shortcut .accent { stroke: var(--accent); }
-.shortcut:hover { color: var(--accent); }
-
 /* ---- 페이지 본문 ---- */
 
 .error { background: var(--warn-soft); color: var(--warn); padding: 12px 16px; margin: 0 0 16px; }
@@ -319,7 +304,6 @@ button { font: inherit; letter-spacing: inherit; color: inherit; cursor: pointer
 .card-gap { margin-top: 24px; }
 .card-title { font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -0.025em; margin: 0 0 12px; }
 .placeholder-text { margin: 0 0 24px; color: var(--muted); font-size: 15px; }
-.placeholder-center { margin: 28px 0 8px; text-align: center; }
 
 /* ---- 분야별 출원 추이 ---- */
 .trend-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 32px; margin: 4px 0 18px; }
@@ -420,11 +404,6 @@ button { font: inherit; letter-spacing: inherit; color: inherit; cursor: pointer
 
 /* ---- 홈: 많이 늘어난 세부 기술 ---- */
 .movers { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px 40px; }
-.movers-title { margin: 8px 0 6px; font-size: 14px; }
-.mover-list { list-style: none; margin: 0; padding: 0; }
-.mover-list li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hairline); }
-.mover-list li:last-child { border-bottom: 0; }
-.mover-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .trend-change { font-weight: 600; }
 

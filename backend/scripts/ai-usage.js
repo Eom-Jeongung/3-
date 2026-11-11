@@ -19,11 +19,6 @@ const total = db.prepare(`
   FROM ai_calls WHERE called_at >= datetime('now', ?)
 `).get(since);
 
-const asks = db.prepare(`
-  SELECT COUNT(*) n, SUM(source = 'ai') ai, SUM(source = 'template') template, SUM(error IS NOT NULL) failed
-  FROM ask_log WHERE asked_at >= datetime('now', ?)
-`).get(since);
-
 console.log(`최근 ${days}일 AI 사용량 (날짜는 한국 시간)\n`);
 if (!byDay.length) {
   console.log('기록이 없어요.');
@@ -34,5 +29,4 @@ if (!byDay.length) {
   })));
 }
 console.log(`합계: 호출 ${total.calls}회 (실패 ${total.failed ?? 0}회), 입력 토큰 ${total.prompt_tokens.toLocaleString('ko-KR')}, 출력 토큰 ${total.completion_tokens.toLocaleString('ko-KR')}`);
-console.log(`AI 질문: ${asks.n}건 (AI 문장 ${asks.ai ?? 0}, 조회 결과 문장 ${asks.template ?? 0}, 실패 ${asks.failed ?? 0})`);
 console.log('\n비용은 OpenRouter 사이트의 Activity 화면에서 확인하세요. 토큰 수 × 모델 가격으로 어림할 수도 있어요.');

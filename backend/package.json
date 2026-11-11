@@ -1,10 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "",
-  "directories": {
-    "doc": "docs"
-  },
+  "description": "LG Display 특허 트렌드 센싱 서버 (Express + SQLite)",
   "scripts": {
     "db:init": "node --env-file-if-exists=.env scripts/init-db.js",
     "sync": "node --env-file-if-exists=.env scripts/run-sync.js",

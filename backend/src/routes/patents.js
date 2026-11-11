@@ -11,7 +11,7 @@ const SORTABLE = ['open_date', 'application_date', 'registration_date', 'title',
 const NULLABLE_SORT = ['open_date', 'registration_date'];
 const COLUMNS = `
   id, application_number, applicant_name, applicant_type, title, application_date, open_date, registration_date,
-  register_number, legal_status, ipc_codes, tech_category, last_synced_at
+  register_number, legal_status, ipc_codes, last_synced_at
 `;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 

@@ -1,4 +1,4 @@
-// 트렌드 집계 (홈 화면과 AI 질문이 함께 쓴다). AI 없이 DB만으로 계산한다
+// 트렌드 집계 (대시보드·기술 분야별 분석·AI 동향 요약이 함께 쓴다). AI 없이 DB만으로 계산한다
 import { db } from './db.js';
 import { CHINA_APPLICANTS } from './kipris.js';
 
@@ -17,7 +17,6 @@ const PATENTS_THEN_CLASSIFICATION = `
 `;
 
 const ymd = (d) => d.toISOString().slice(0, 10);
-export const yearsBefore = (date, years) => ymd(addYears(new Date(date), -years));
 const addYears = (d, n) => { const r = new Date(d); r.setUTCFullYear(r.getUTCFullYear() + n); return r; };
 const addDays = (d, n) => { const r = new Date(d); r.setUTCDate(r.getUTCDate() + n); return r; };
 
@@ -43,28 +42,6 @@ export function getWindows() {
     const pick = (type) => rows.find((r) => r.applicant_type === type)?.n ?? 0;
     return { from, to, ...Object.fromEntries(COMPANIES.map((c) => [c, pick(c)])) };
   });
-}
-
-/** 분야(1~3차)를 지정한 회사별 구간 건수. 분야가 없으면 전체 공개 건수 */
-export function countsByField({ level1, level2, level3 }, windows) {
-  const counts = emptyCounts();
-  const levels = Object.entries({ level1, level2, level3 }).filter(([, v]) => v);
-  const stmt = db.prepare(`
-    SELECT p.applicant_type company, COUNT(*) n
-    ${PATENTS_THEN_CLASSIFICATION}
-    WHERE c.is_primary = 1 AND c.criteria_version = ${CURRENT_VERSION}
-      ${levels.map(([k]) => `AND c.${k} = @${k}`).join(' ')}
-      AND p.open_date BETWEEN @from AND @to
-    GROUP BY 1
-  `);
-  windows.forEach((w, i) => {
-    if (!levels.length) {
-      for (const c of COMPANIES) counts[c][i] = w[c];
-      return;
-    }
-    for (const { company, n } of stmt.all({ ...Object.fromEntries(levels), from: w.from, to: w.to })) counts[company][i] = n;
-  });
-  return counts;
 }
 
 // 3차가 전부 같은 2차 안에 있으므로 "2차|3차"를 키로 묶는다

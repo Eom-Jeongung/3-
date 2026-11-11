@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "데모 실행 (npm run dev)",
+      "name": "실행 (npm run dev)",
       "type": "node-terminal",
       "request": "launch",
       "command": "npm run dev",

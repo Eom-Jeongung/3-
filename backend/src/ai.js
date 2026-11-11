@@ -34,7 +34,7 @@ function logCall(row) {
 }
 
 /**
- * @param {string} purpose 무엇에 쓴 호출인지 (ai_calls 기록용, 예: 'ask-plan')
+ * @param {string} purpose 무엇에 쓴 호출인지 (ai_calls 기록용, 예: 'trend-summary')
  * @returns {Promise<string>} 모델이 돌려준 글
  */
 export async function chat(messages, { maxTokens = 800, purpose = 'etc', timeoutMs = TIMEOUT_MS } = {}) {
