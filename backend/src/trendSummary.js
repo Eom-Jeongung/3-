@@ -2,7 +2,7 @@
 // - 숫자는 DB에서 계산한 값만 AI에게 준다 (비중도 미리 계산). 답은 summaryCheck.js로 검사한다
 // - 화면(routes/summaries.js)과 시험 스크립트(scripts/summary-trial.js)가 함께 쓴다
 import { db } from './db.js';
-import { getSeries } from './trendData.js';
+import { getSummaryStats } from './summaryStats.js';
 import { chat, isAiConfigured } from './ai.js';
 import { CRITERIA_VERSION } from './classification.js';
 import { checkSummary, SECTIONS } from './summaryCheck.js';
@@ -20,7 +20,6 @@ const isWeakTerm = (t) => {
   return k.length < 3 || /^제\d/.test(k) || WEAK_TERMS.has(k) || /(하게|따르면|의하면|위하여|관한)$/.test(k);
 };
 const MIN_COUNT = 30; // 30건 미만은 %가 크게 흔들려 증감률을 내지 않는다
-const pct = (a, b) => (a >= MIN_COUNT ? Math.round(((b - a) / a) * 100) : null);
 const LEVELS = ['level1', 'level2', 'level3'];
 
 /** 요약 범위 이름 (예: "OLED > 소자"). 범위가 없으면 "전체" */
@@ -29,30 +28,12 @@ export const scopeLabel = (scope) => LEVELS.map((k) => scope[k]).filter(Boolean)
 /** AI에게 줄 자료(글), 통계 부분, 근거 특허를 만든다 */
 export function buildSummaryInput({ level1, level2, level3, from, to }) {
   const scope = { level1, level2, level3 };
-  const data = getSeries({ years: Math.max(1, new Date().getFullYear() - from), unit: 'year', ...scope });
+  const data = getSummaryStats(db, { ...scope, from, to }, CRITERIA_VERSION);
   const keep = data.periods.map((p, i) => [p, i]).filter(([p]) => Number(p.key) >= from && Number(p.key) <= to);
   if (keep.length < 2) throw new Error(`${from}~${to}년에 비교할 연도가 부족해요`);
   const incomplete = keep.filter(([p]) => p.incomplete).map(([p]) => p.label);
-  const { groups } = data;
-
-  const table = [];
-  for (const company of data.companies) {
-    for (const group of groups) {
-      const counts = keep.map(([, i]) => data.series[company][group][i]);
-      if (counts.every((n) => n === 0)) continue;
-      table.push({ company, group, counts, change: pct(counts[0], counts.at(-1)) });
-    }
-  }
-  const totals = data.companies.map((company) => {
-    const counts = keep.map(([, i]) => groups.reduce((s, g) => s + data.series[company][g][i], 0));
-    return { company, counts, change: pct(counts[0], counts.at(-1)) };
-  });
-  // 비중은 AI가 계산하지 않도록 미리 계산한다 (시험에서 AI가 "약 51%"를 직접 계산했다)
-  const last = keep.length - 1;
-  const shares = table.map((t) => {
-    const total = totals.find((x) => x.company === t.company).counts[last];
-    return { ...t, share: total ? Math.round((t.counts[last] / total) * 100) : null };
-  });
+  const { table, totals } = data;
+  const shares = table;
 
   // 급증 용어: 마지막 해 출원을 그 전 해들과 비교해 갑자기 많이 나온 용어 (emerging.js, AI 없이 계산)
   // 해석의 근거로 쓰고, 그 용어가 나온 특허를 "주목 특허" 후보로 먼저 뽑는다
