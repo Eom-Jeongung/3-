@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 process.env.DB_PATH = ':memory:';
 const { db } = await import('../src/db.js');
 const { getSummaryStats } = await import('../src/summaryStats.js');
-const { buildSummaryInput, selectSummaryEvidence } = await import('../src/trendSummary.js');
+const { buildSummaryInput, generateTrendSummary, selectSummaryEvidence } = await import('../src/trendSummary.js');
 const { CRITERIA_VERSION } = await import('../src/classification.js');
 
 const fields = ['화소 배열·레이아웃', '패널 구조 설계', '마이크로렌즈·광추출 구조', '마이크로LED 어레이 구조', '터치·센서'];
@@ -138,4 +138,63 @@ test('범위에 맞는 근거가 없으면 다른 분야의 특허를 사용하�
   const other = db.prepare('SELECT application_number number FROM patents LIMIT 1').get().number;
   const bursts = { own: [{ term: '검증 용어', examples: [other] }], competitor: [], china: [] };
   assert.deepEqual(selectSummaryEvidence({ scope: selectedScope, from: 2020, to: 2022, data, bursts }), []);
+});
+
+test('요청 버전 주 분류가 없으면 다른 버전이 있어도 명확히 거부한다', () => {
+  assert.throws(() => getSummaryStats(db, scope, 'v999'), (error) => {
+    assert.equal(error.code, 'SUMMARY_CLASSIFICATION_VERSION_MISSING');
+    assert.match(error.message, /v999/);
+    assert.ok(error.message.includes(CRITERIA_VERSION));
+    return true;
+  });
+});
+
+test('분류 데이터가 전혀 없거나 부 분류만 있으면 주 분류 없음으로 거부한다', () => {
+  db.exec('SAVEPOINT classification_test');
+  try {
+    db.prepare('DELETE FROM classification').run();
+    assert.throws(() => getSummaryStats(db, scope, CRITERIA_VERSION), /DB에 있는 주 분류 기준: 없음/);
+    add({ primary: 0 });
+    assert.throws(() => getSummaryStats(db, scope, CRITERIA_VERSION), /주 분류 데이터가 없습니다/);
+  } finally {
+    db.exec('ROLLBACK TO classification_test');
+    db.exec('RELEASE classification_test');
+  }
+});
+
+test('유효한 버전에서 선택한 조건에 출원이 없으면 버전 오류가 아닌 0건으로 표시한다', () => {
+  const emptyScope = { ...scope, level3: '존재하지 않는 기술' };
+  const result = getSummaryStats(db, emptyScope, CRITERIA_VERSION);
+  assert.equal(result.noMatches, true);
+  assert.ok(result.totals.every((row) => row.counts.every((n) => n === 0)));
+  assert.match(buildSummaryInput(emptyScope).statText, /선택한 범위·기간에 해당 분류 기준으로 분류된 출원이 없습니다/);
+  assert.equal(stats().noMatches, false);
+});
+
+test('버전 불일치 시 AI 요청과 요약 저장 전에 생성을 중단한다', async () => {
+  const originalFetch = globalThis.fetch;
+  const oldBase = process.env.AI_BASE_URL;
+  const oldModel = process.env.AI_MODEL;
+  let called = false;
+  process.env.AI_BASE_URL = 'https://example.invalid';
+  process.env.AI_MODEL = 'test';
+  globalThis.fetch = () => { called = true; throw new Error('unexpected AI request'); };
+  db.exec('SAVEPOINT version_test');
+  const before = db.prepare('SELECT COUNT(*) n FROM trend_summaries').get().n;
+  try {
+    db.prepare('UPDATE classification SET criteria_version = ? WHERE is_primary = 1').run('v0.1');
+    await assert.rejects(generateTrendSummary(scope), (error) => {
+      assert.equal(error.code, 'SUMMARY_CLASSIFICATION_VERSION_MISSING');
+      assert.match(error.message, /v0\.1/);
+      return true;
+    });
+    assert.equal(called, false);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM trend_summaries').get().n, before);
+  } finally {
+    db.exec('ROLLBACK TO version_test');
+    db.exec('RELEASE version_test');
+    globalThis.fetch = originalFetch;
+    if (oldBase === undefined) delete process.env.AI_BASE_URL; else process.env.AI_BASE_URL = oldBase;
+    if (oldModel === undefined) delete process.env.AI_MODEL; else process.env.AI_MODEL = oldModel;
+  }
 });

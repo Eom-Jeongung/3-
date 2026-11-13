@@ -9,6 +9,16 @@ export function getSummaryStats(db, { level1, level2, level3, from, to }, versio
   if (!Number.isInteger(from) || !Number.isInteger(to) || from >= to || from < 1990 || to > 9999) {
     throw new Error('Invalid summary period');
   }
+  // Check the version across the DB, not just the selected scope: a valid
+  // classification version may legitimately have no patents in that scope.
+  const exists = db.prepare('SELECT 1 FROM classification WHERE is_primary = 1 AND criteria_version = ? LIMIT 1').get(version);
+  if (!exists) {
+    const versions = db.prepare('SELECT DISTINCT criteria_version FROM classification WHERE is_primary = 1 ORDER BY criteria_version').all()
+      .map((row) => row.criteria_version);
+    const error = new Error(`요약에 필요한 분류 기준 ${version}의 주 분류 데이터가 없습니다. DB에 있는 주 분류 기준: ${versions.join(', ') || '없음'}. 분류 데이터와 버전을 확인해 주세요.`);
+    error.code = 'SUMMARY_CLASSIFICATION_VERSION_MISSING';
+    throw error;
+  }
   const dates = db.prepare('SELECT MAX(application_date) applied, MAX(open_date) opened FROM patents').get();
   if (!dates.applied || to > Number(dates.applied.slice(0, 4))) {
     throw new Error('요청한 마지막 연도까지의 출원 데이터가 없습니다');
@@ -54,5 +64,5 @@ export function getSummaryStats(db, { level1, level2, level3, from, to }, versio
     return [{ company, group, counts, change: change(counts[0], counts.at(-1)),
       share: total ? Math.round(counts.at(-1) / total * 100) : null }];
   }));
-  return { periods, groups, groupLevel, companies: COMPANIES, series, totals, table };
+  return { periods, groups, groupLevel, companies: COMPANIES, series, totals, table, noMatches: rows.length === 0 };
 }

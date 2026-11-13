@@ -44,7 +44,7 @@ router.post('/', async (req, res) => {
   } catch (e) {
     const busy = /HTTP 429/.test(e.message);
     const slow = /timeout|aborted/i.test(e.message);
-    res.status(busy || slow ? 503 : 500).json({
+    res.status(e.code === 'SUMMARY_CLASSIFICATION_VERSION_MISSING' ? 409 : busy || slow ? 503 : 500).json({
       error: busy ? 'AI 서버가 바빠요(무료 모델 공용 한도). 잠시 뒤 다시 시도하거나 다른 모델로 바꿔 주세요.'
         : slow ? 'AI 응답이 3분 안에 오지 않았어요. 무료 모델이 붐비는 것 같아요. 잠시 뒤 다시 시도해 주세요.'
         : e.message,
