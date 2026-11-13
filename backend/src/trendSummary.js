@@ -25,65 +25,51 @@ const LEVELS = ['level1', 'level2', 'level3'];
 /** 요약 범위 이름 (예: "OLED > 소자"). 범위가 없으면 "전체" */
 export const scopeLabel = (scope) => LEVELS.map((k) => scope[k]).filter(Boolean).join(' > ') || '전체';
 
-/** AI에게 줄 자료(글), 통계 부분, 근거 특허를 만든다 */
-export function buildSummaryInput({ level1, level2, level3, from, to }) {
-  const scope = { level1, level2, level3 };
-  const data = getSummaryStats(db, { ...scope, from, to }, CRITERIA_VERSION);
-  const keep = data.periods.map((p, i) => [p, i]).filter(([p]) => Number(p.key) >= from && Number(p.key) <= to);
-  if (keep.length < 2) throw new Error(`${from}~${to}년에 비교할 연도가 부족해요`);
-  const incomplete = keep.filter(([p]) => p.incomplete).map(([p]) => p.label);
-  const { table, totals } = data;
-  const shares = table;
-
-  // 급증 용어: 마지막 해 출원을 그 전 해들과 비교해 갑자기 많이 나온 용어 (emerging.js, AI 없이 계산)
-  // 해석의 근거로 쓰고, 그 용어가 나온 특허를 "주목 특허" 후보로 먼저 뽑는다
-  const bursts = {};
-  for (const company of Object.keys(COMPANY)) {
-    const { rows } = burstTerms({
-      applicant: company, ...scope, dateField: 'application_date',
-      pastFrom: `${from}-01-01`, recentFrom: `${to}-01-01`, ref: `${to}-12-31`,
-    });
-    bursts[company] = rows.filter((r) => !isWeakTerm(r.term)).slice(0, BURST_LIMIT)
-      .map((r) => ({ term: cleanTerm(r.term), recent: r.recentDocs, past: r.pastDocs, examples: r.examples.map((x) => x.applicationNumber) }));
-  }
-
+/** 후보가 요청한 회사·분류·기간에 실제로 속하는지 확인한 뒤에만 선정한다. */
+export function selectSummaryEvidence({ scope, from, to, data, bursts }, database = db) {
   // 근거 특허: ① 급증 용어가 나온 특허(회사별 상위 3개 용어에서 1건씩) ② 증감이 큰 분야(회사별 2개)의 마지막 해 출원 1건씩
   // 매번 같은 특허(결과를 비교할 수 있게), 날짜에 몰리지 않게
-  const groupCol = data.groupLevel ?? 'level1';
+  const groupCol = data.groupLevel ?? 'level3';
   const scopeWhere = LEVELS.filter((k) => scope[k]).map((k) => `AND c.${k} = @${k}`).join(' ');
-  const detail = db.prepare(`
+  const detail = database.prepare(`
     SELECT p.id, p.application_number number, p.applicant_type company, p.application_date date, p.legal_status status,
       c.${groupCol} field, p.title, p.abstract
     FROM patents p JOIN classification c ON c.application_number = p.application_number AND c.is_primary = 1 AND +c.criteria_version = @version
-    WHERE p.application_number = @number
+    WHERE p.application_number = @number AND p.applicant_type = @company ${scopeWhere}
+      AND p.application_date BETWEEN @from AND @to
   `);
-  const pick = db.prepare(`
+  const pick = database.prepare(`
     SELECT p.application_number number
     FROM patents p JOIN classification c ON c.application_number = p.application_number
-    WHERE c.is_primary = 1 AND +c.criteria_version = @version ${scopeWhere} AND c.${groupCol} = @group
+    WHERE c.is_primary = 1 AND +c.criteria_version = @version ${scopeWhere}
+      ${data.groupLevel ? `AND c.${groupCol} = @group` : ''}
       AND p.applicant_type = @company AND substr(p.application_date, 1, 4) = @year
     ORDER BY (CAST(substr(p.application_number, -6) AS INTEGER) * 7919) % 1000 LIMIT 3
   `);
-  const chosen = new Map(); // 출원번호 → 선정 이유
+  const chosen = new Map(); // 출원번호 → 검증된 특허와 선정 이유
+  const choose = (numbers, company, reason) => {
+    for (const number of numbers) {
+      if (chosen.has(number)) continue;
+      const e = detail.get({ ...scope, number, company, version: CRITERIA_VERSION, from: `${from}-01-01`, to: `${to}-12-31` });
+      if (e) { chosen.set(number, { e, reason }); return; }
+    }
+  };
   for (const company of Object.keys(COMPANY)) {
-    for (const b of bursts[company].slice(0, 3)) {
-      const n = b.examples.find((x) => !chosen.has(x));
-      if (n) chosen.set(n, `급증 용어 "${b.term}"`);
+    for (const b of (bursts[company] ?? []).slice(0, 3)) {
+      choose(b.examples, company, `급증 용어 "${b.term}"`);
     }
   }
   const moveSize = (t) => (t.change !== null ? Math.abs(t.change) * 1000 : 0) + Math.abs(t.counts.at(-1) - t.counts[0]);
-  const movers = Object.keys(COMPANY).flatMap((company) => table
+  const movers = Object.keys(COMPANY).flatMap((company) => data.table
     .filter((t) => t.company === company && t.counts.at(-1) > 0 && !['미분류', '그 외'].includes(t.group))
     .sort((a, b) => moveSize(b) - moveSize(a))
     .slice(0, 2));
   for (const t of movers) {
-    const n = pick.all({ version: CRITERIA_VERSION, ...scope, group: t.group, company: t.company, year: String(to) })
-      .map((r) => r.number).find((x) => !chosen.has(x));
-    if (n) chosen.set(n, `증감이 큰 분야 "${t.group}"`);
+    const numbers = pick.all({ version: CRITERIA_VERSION, ...scope, group: t.group, company: t.company, year: String(to) })
+      .map((r) => r.number);
+    choose(numbers, t.company, `증감이 큰 분야 "${data.groupLevel ? t.group : scope.level3}"`);
   }
-  const evidence = [...chosen].slice(0, EVIDENCE_LIMIT)
-    .map(([number, reason]) => ({ e: detail.get({ number, version: CRITERIA_VERSION }), reason }))
-    .filter(({ e }) => e)
+  return [...chosen.values()].slice(0, EVIDENCE_LIMIT)
     .map(({ e, reason }) => ({
       id: e.id,
       number: e.number,
@@ -97,6 +83,29 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
       fullText: `${e.title} ${e.abstract ?? ''}`, // 검사용: 초록 전체
       abstract: (e.abstract ?? '').replace(/\s+/g, ' ').slice(0, 300),
     }));
+}
+
+/** AI에게 줄 자료(글), 통계 부분, 근거 특허를 만든다 */
+export function buildSummaryInput({ level1, level2, level3, from, to }) {
+  const scope = { level1, level2, level3 };
+  const data = getSummaryStats(db, { ...scope, from, to }, CRITERIA_VERSION);
+  const keep = data.periods.map((p, i) => [p, i]).filter(([p]) => Number(p.key) >= from && Number(p.key) <= to);
+  if (keep.length < 2) throw new Error(`${from}~${to}년에 비교할 연도가 부족해요`);
+  const incomplete = keep.filter(([p]) => p.incomplete).map(([p]) => p.label);
+  const { table, totals } = data;
+  const shares = table;
+
+  // 급증 용어는 마지막 해 출원을 이전 연도들과 비교한다.
+  const bursts = {};
+  for (const company of Object.keys(COMPANY)) {
+    const { rows } = burstTerms({
+      applicant: company, ...scope, dateField: 'application_date',
+      pastFrom: `${from}-01-01`, recentFrom: `${to}-01-01`, ref: `${to}-12-31`,
+    });
+    bursts[company] = rows.filter((r) => !isWeakTerm(r.term)).slice(0, BURST_LIMIT)
+      .map((r) => ({ term: cleanTerm(r.term), recent: r.recentDocs, past: r.pastDocs, examples: r.examples.map((x) => x.applicationNumber) }));
+  }
+  const evidence = selectSummaryEvidence({ scope, from, to, data, bursts });
 
   // 증감률 순위: "가장 많이 늘었다" 같은 말을 AI가 직접 비교하지 않게 미리 정렬해 준다
   const ranks = Object.keys(COMPANY).map((company) => {

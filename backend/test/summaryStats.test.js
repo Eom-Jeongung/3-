@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 process.env.DB_PATH = ':memory:';
 const { db } = await import('../src/db.js');
 const { getSummaryStats } = await import('../src/summaryStats.js');
-const { buildSummaryInput } = await import('../src/trendSummary.js');
+const { buildSummaryInput, selectSummaryEvidence } = await import('../src/trendSummary.js');
 const { CRITERIA_VERSION } = await import('../src/classification.js');
 
 const fields = ['화소 배열·레이아웃', '패널 구조 설계', '마이크로렌즈·광추출 구조', '마이크로LED 어레이 구조', '터치·센서'];
@@ -81,4 +81,61 @@ test('빈 연도는 0으로 유지하고 소수 표본의 증감률은 계산하
 test('DB에 없는 마지막 연도와 유효하지 않은 기간은 거부한다', () => {
   assert.throws(() => getSummaryStats(db, { ...scope, to: 2025 }, CRITERIA_VERSION), /마지막 연도/);
   assert.throws(() => getSummaryStats(db, { ...scope, to: 2020 }, CRITERIA_VERSION), /period/);
+});
+
+test('다섯 3차 기술 각각에서 세 회사의 마지막 해 근거 특허를 선정한다', () => {
+  for (const field of fields) {
+    const selectedScope = { ...scope, level3: field };
+    const { evidence } = buildSummaryInput(selectedScope);
+    assert.deepEqual(evidence.map((e) => e.companyKey).sort(), [...companies].sort(), field);
+    for (const item of evidence) {
+      assert.equal(item.field, field);
+      assert.match(item.reason, /^증감이 큰 분야/);
+      assert.ok(item.reason.includes(field));
+      assert.ok(item.date >= '2022-01-01' && item.date <= '2022-12-31');
+      const row = db.prepare(`SELECT p.applicant_type, p.application_date, c.level1, c.level2, c.level3, c.is_primary, c.criteria_version
+        FROM patents p JOIN classification c ON c.application_number = p.application_number WHERE p.application_number = ?`).get(item.number);
+      assert.deepEqual(row, { applicant_type: item.companyKey, application_date: item.date, level1: 'OLED', level2: '설계', level3: field, is_primary: 1, criteria_version: CRITERIA_VERSION });
+    }
+  }
+});
+
+test('급증 용어 후보는 다른 회사·분야·기간·분류 버전·부 분류를 제외하고 다음 후보를 선택한다', () => {
+  add({ year: 2024, field: fields[0] });
+  const selectedScope = { ...scope, level3: fields[0] };
+  const lookup = db.prepare(`SELECT p.application_number number FROM patents p JOIN classification c ON c.application_number = p.application_number
+    WHERE p.applicant_type = @company AND substr(p.application_date, 1, 4) = @year AND c.level1 = @level1
+      AND c.level2 = @level2 AND c.level3 = @level3 AND c.is_primary = @primary AND c.criteria_version = @version LIMIT 1`);
+  const find = (overrides = {}) => lookup.get({ company: 'own', year: '2020', level1: 'OLED', level2: '설계', level3: fields[0], primary: 1, version: CRITERIA_VERSION, ...overrides }).number;
+  const valid = find();
+  const invalid = [find({ company: 'competitor' }), find({ level3: fields[1] }), find({ year: '2019' }), find({ year: '2024' }),
+    find({ level1: 'LCD' }), find({ primary: 0 }), find({ version: 'old' })];
+  const data = getSummaryStats(db, selectedScope, CRITERIA_VERSION);
+  const bursts = { own: [{ term: '검증 용어', examples: [...invalid, valid] }], competitor: [], china: [] };
+  const evidence = selectSummaryEvidence({ scope: selectedScope, from: 2020, to: 2022, data, bursts });
+  assert.equal(evidence.find((e) => e.reason.startsWith('급증 용어'))?.number, valid);
+  assert.ok(invalid.every((number) => !evidence.some((e) => e.number === number)));
+});
+
+test('2차 기술 분야와 전체 범위에서도 후보의 회사와 기간을 지킨다', () => {
+  for (const selectedScope of [{ level2: '설계' }, {}]) {
+    const { evidence } = buildSummaryInput({ ...selectedScope, from: 2020, to: 2022 });
+    assert.ok(evidence.length > 0);
+    for (const item of evidence) {
+      const row = db.prepare(`SELECT p.applicant_type, p.application_date, c.level2 FROM patents p
+        JOIN classification c ON c.application_number = p.application_number AND c.is_primary = 1 AND c.criteria_version = ?
+        WHERE p.application_number = ?`).get(CRITERIA_VERSION, item.number);
+      assert.equal(row.applicant_type, item.companyKey);
+      assert.ok(row.application_date >= '2020-01-01' && row.application_date <= '2022-12-31');
+      if (selectedScope.level2) assert.equal(row.level2, selectedScope.level2);
+    }
+  }
+});
+
+test('범위에 맞는 근거가 없으면 다른 분야의 특허를 사용하지 않는다', () => {
+  const selectedScope = { ...scope, level3: '존재하지 않는 기술' };
+  const data = getSummaryStats(db, selectedScope, CRITERIA_VERSION);
+  const other = db.prepare('SELECT application_number number FROM patents LIMIT 1').get().number;
+  const bursts = { own: [{ term: '검증 용어', examples: [other] }], competitor: [], china: [] };
+  assert.deepEqual(selectSummaryEvidence({ scope: selectedScope, from: 2020, to: 2022, data, bursts }), []);
 });
