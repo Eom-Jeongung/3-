@@ -39,3 +39,11 @@ test('자유 서술은 보류하고 주목 특허는 실제 명칭과 선정 이
   assert.match(result.content, /1020240147664 \(자사\): 표시 장치 \(급증 용어\)/);
   assert.ok(!result.content.includes('거짓 주장'));
 });
+
+test('기간 중 작은 표본이 있으면 사실 인용이 있어도 해석을 보류한다', () => {
+  const small = { ...stats, minimumSample: 30, values: [...stats.values, { company: 'own', field, year: 2020, metric: 'count', value: 29 }] };
+  const text = `- 해석: 자사 ${field} 2022년 40건 | 1020240147664 | 「터치 센서 전극을 포함하는」`;
+  assert.equal(groundInterpretations(text, evidence, small).content, '- 해석: 판단 근거 부족');
+  const sufficient = { ...small, values: small.values.map((v) => v.year === 2020 ? { ...v, value: 30 } : v) };
+  assert.match(groundInterpretations(text, evidence, sufficient).content, /특허\(1020240147664\)/);
+});

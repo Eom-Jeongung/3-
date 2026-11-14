@@ -2,8 +2,9 @@
 // This deliberately does not use the chart's series limit or date window.
 const COMPANIES = ['own', 'competitor', 'china'];
 const LEVELS = ['level1', 'level2', 'level3'];
-const MIN_COUNT = 30;
-const change = (first, last) => first >= MIN_COUNT ? Math.round((last - first) / first * 100) : null;
+// Existing project policy, not a statistical significance threshold.
+export const MIN_COUNT = 30;
+const change = (first, last) => first >= MIN_COUNT && last >= MIN_COUNT ? Math.round((last - first) / first * 100) : null;
 
 export function getSummaryStats(db, { level1, level2, level3, from, to }, version) {
   if (!Number.isInteger(from) || !Number.isInteger(to) || from >= to || from < 1990 || to > 9999) {

@@ -192,6 +192,17 @@ test('유효한 버전에서 선택한 조건에 출원이 없으면 버전 오�
   assert.equal(stats().noMatches, false);
 });
 
+test('기존 30건 주의 기준을 분야·회사·연도에 적용하고 양 끝 중 하나가 적으면 증감률을 생략한다', () => {
+  const chosen = buildSummaryInput({ ...scope, level3: fields[0] });
+  assert.ok(chosen.dataWarnings.some((w) => w.includes('2021년 10건')));
+  assert.match(chosen.statText, /집계 기준 차이: 출원 건수/);
+  assert.match(chosen.statText, /초록 앞 200자 기준 중복 제거/);
+  const result = getSummaryStats(db, { ...scope, level3: fields[0], from: 2020, to: 2021 }, CRITERIA_VERSION);
+  const row = result.table.find((r) => r.company === 'own');
+  assert.deepEqual(row.counts, [30, 10]);
+  assert.equal(row.change, null);
+});
+
 test('버전 불일치 시 AI 요청과 요약 저장 전에 생성을 중단한다', async () => {
   const originalFetch = globalThis.fetch;
   const oldBase = process.env.AI_BASE_URL;
@@ -237,6 +248,9 @@ test('요약 생성 시 구조화 통계를 전달하고 수치 불일치 검사
     assert.ok(sent.messages[1].content.includes('[구조화 통계:'));
     assert.equal(result.checks.statMismatches.length, 1);
     assert.equal(result.checks.statUnverified.length, 0);
+    assert.ok(result.checks.dataWarnings.length);
+    assert.match(result.content, /30건은 기존 주의 기준/);
+    assert.match(result.content, /급증 용어는 유사 초록 중복 제거/);
   } finally {
     db.exec('ROLLBACK TO generation_test');
     db.exec('RELEASE generation_test');

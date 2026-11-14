@@ -2,6 +2,7 @@ export const CHECKS = [
   ['statMismatches', '회사·분야·연도별 통계 불일치'],
   ['statUnverified', '통계 수치의 맥락을 확인할 수 없음'],
   ['evidenceWarnings', '근거 후보 부족'],
+  ['dataWarnings', '소수 데이터 또는 자료 부족'],
   ['strangeNumbers', '자료에 없는 숫자'],
   ['strangePatents', '근거 목록에 없는 출원번호'],
   ['mixups', '다른 특허 내용이 섞였을 수 있는 인용'],
@@ -15,6 +16,6 @@ export const CHECKS = [
 export function summaryCheckStatus(checks) {
   const data = checks && typeof checks === 'object' ? checks : {}
   const issues = CHECKS.filter(([key]) => Array.isArray(data[key]) && data[key].length)
-  const missing = ['statMismatches', 'statUnverified', 'evidenceWarnings'].some((key) => !Array.isArray(data[key]))
+  const missing = ['statMismatches', 'statUnverified', 'evidenceWarnings', 'dataWarnings'].some((key) => !Array.isArray(data[key]))
   return { issues, missing }
 }

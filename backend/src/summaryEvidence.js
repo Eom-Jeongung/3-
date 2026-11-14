@@ -37,7 +37,10 @@ export function groundInterpretations(content, evidence, stats) {
     const canonical = stat.match(/^(자사|LG디스플레이|삼성|삼성디스플레이|중국|중국 4사)\s+(.+?)\s+(\d{4})년\s+([\d,]+)건$/);
     const source = item ? `${item.title} ${item.abstract}` : '';
     const quoted = quote.trim();
-    if (!item || !canonical || canonical[2] !== item.field || !companyMatches || !fieldMatches || verify.statMismatches.length || verify.statUnverified.length || quoted.length < 6 || !source.includes(quoted)) {
+    const group = stats.fields.length === 1 && stats.fields[0] === '전체' ? '전체' : item?.field;
+    const samples = stats.values.filter((v) => v.company === item?.companyKey && v.field === group && v.metric === 'count');
+    const tooSmall = stats.minimumSample != null && (!samples.length || samples.some((v) => v.value < stats.minimumSample));
+    if (!item || !canonical || canonical[2] !== item.field || !companyMatches || !fieldMatches || tooSmall || verify.statMismatches.length || verify.statUnverified.length || quoted.length < 6 || !source.includes(quoted)) {
       warnings.push('해석에 연결된 통계·회사·분야·특허 원문을 확인하지 못했습니다.');
       return fallback;
     }
