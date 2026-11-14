@@ -63,11 +63,13 @@ test('모든 분야를 유지하고 그 외로 합치지 않는다', () => {
 });
 
 test('실제 요약 입력에 요청 기간과 각 분야가 반영된다', () => {
-  const { statText } = buildSummaryInput(scope);
+  const { statText, facts, structuredStats } = buildSummaryInput(scope);
   assert.match(statText, /연도: 2020, 2021, 2022/);
   assert.match(statText, /자사\(LG디스플레이\): 165, 60, 210/);
   for (const field of fields) assert.ok(statText.includes(field));
   assert.ok(!statText.includes('그 외'));
+  assert.ok(facts.includes('[구조화 통계:'));
+  assert.ok(structuredStats.values.some((r) => r.company === 'own' && r.field === fields[0] && r.year === 2022 && r.metric === 'count' && r.value === 40));
 });
 
 test('빈 연도는 0으로 유지하고 소수 표본의 증감률은 계산하지 않는다', () => {
@@ -193,6 +195,32 @@ test('버전 불일치 시 AI 요청과 요약 저장 전에 생성을 중단한
   } finally {
     db.exec('ROLLBACK TO version_test');
     db.exec('RELEASE version_test');
+    globalThis.fetch = originalFetch;
+    if (oldBase === undefined) delete process.env.AI_BASE_URL; else process.env.AI_BASE_URL = oldBase;
+    if (oldModel === undefined) delete process.env.AI_MODEL; else process.env.AI_MODEL = oldModel;
+  }
+});
+
+test('요약 생성 시 구조화 통계를 전달하고 수치 불일치 검사를 저장한다', async () => {
+  const originalFetch = globalThis.fetch;
+  const oldBase = process.env.AI_BASE_URL;
+  const oldModel = process.env.AI_MODEL;
+  let sent;
+  process.env.AI_BASE_URL = 'https://example.invalid';
+  process.env.AI_MODEL = 'test';
+  globalThis.fetch = async (_url, options) => {
+    sent = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ choices: [{ message: { content: `## 핵심 흐름\n- 자사 ${fields[0]} 2022년 41건\n## 성장 분야\n## 경쟁사 동향\n## 주목 특허\n## 한계` } }] }) };
+  };
+  db.exec('SAVEPOINT generation_test');
+  try {
+    const result = await generateTrendSummary(scope);
+    assert.ok(sent.messages[1].content.includes('[구조화 통계:'));
+    assert.equal(result.checks.statMismatches.length, 1);
+    assert.equal(result.checks.statUnverified.length, 0);
+  } finally {
+    db.exec('ROLLBACK TO generation_test');
+    db.exec('RELEASE generation_test');
     globalThis.fetch = originalFetch;
     if (oldBase === undefined) delete process.env.AI_BASE_URL; else process.env.AI_BASE_URL = oldBase;
     if (oldModel === undefined) delete process.env.AI_MODEL; else process.env.AI_MODEL = oldModel;

@@ -7,6 +7,7 @@ import { chat, isAiConfigured } from './ai.js';
 import { CRITERIA_VERSION } from './classification.js';
 import { checkSummary, SECTIONS } from './summaryCheck.js';
 import { burstTerms } from './emerging.js';
+import { checkStatistics } from './summaryStatCheck.js';
 
 const COMPANY = { own: '자사(LG디스플레이)', competitor: '경쟁사(삼성디스플레이)', china: '중국 경쟁사(BOE·CSOT·Tianma·Visionox)' };
 const EVIDENCE_LIMIT = 10;
@@ -116,6 +117,14 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
   });
 
   const years = keep.map(([p]) => p.key);
+  const structuredStats = {
+    from, to, fields: data.groups,
+    values: table.flatMap((row) => [
+      ...years.map((year, i) => ({ company: row.company, field: row.group, year: Number(year), metric: 'count', value: row.counts[i] })),
+      { company: row.company, field: row.group, year: to, metric: 'share', value: row.share },
+      { company: row.company, field: row.group, year: to, metric: 'change', value: row.change },
+    ]),
+  };
   // 중국 경쟁사는 한국 출원이 원래 적어 거의 늘 30건 미만이므로, 자사·삼성 기준 주의와 따로 알린다
   const smallData = totals.filter((t) => t.company !== 'china').some((t) => t.counts.some((n) => n < MIN_COUNT));
   const chinaSmall = totals.some((t) => t.company === 'china' && t.counts.some((n) => n < MIN_COUNT));
@@ -146,10 +155,13 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
   const facts = [
     statText,
     '',
+    '[구조화 통계: company, field, year, metric(count=출원 건수, share=비중, change=첫해 대비 증감률), value]',
+    JSON.stringify(structuredStats),
+    '',
     '[근거 후보 특허] (출원번호 | 회사 | 출원일 | 상태 | 분야 | 선정 이유 | 명칭 | 초록 앞부분)',
     ...evidence.map((e) => `${e.number} | ${e.company} | ${e.date} | ${e.status} | ${e.field} | ${e.reason} | ${e.title} | ${e.abstract}`),
   ].join('\n');
-  return { facts, statText, evidence };
+  return { facts, statText, evidence, structuredStats };
 }
 
 const UNPUBLISHED_MONTHS = 18; // trendData.js와 같은 기준: 출원 후 보통 18개월 뒤 공개
@@ -166,6 +178,7 @@ const SYSTEM_PROMPT = [
   '너는 디스플레이 기업의 특허 동향을 정리하는 분석가다. 한국어로 쓴다.',
   '규칙:',
   '- 숫자(건수, %, 연도)는 아래 [자료]에 적힌 값을 그대로만 쓴다. 비중·차이·합계·배율을 새로 계산하지 않는다. 필요한 비중은 [분야별 비중]에 있다.',
+  '- 수치가 포함된 문장마다 회사, 정확한 분야명, 연도와 지표(출원 건수·비중·증감률)를 명시한다. 한 문장에는 한 회사와 한 분야만 쓴다.',
   '- 특허를 언급할 때는 [근거 후보 특허]의 출원번호를 괄호로 붙인다. 목록에 없는 특허는 언급하지 않는다.',
   '- 특허 하나를 설명할 때는 그 특허의 명칭과 초록에 있는 내용만 쓴다. 다른 특허의 내용을 섞지 않는다. 회사(자사/경쟁사/중국 경쟁사)도 그 특허 줄에 적힌 대로 쓴다.',
   '- 한 문장에서 특허 여러 건을 언급할 때는 각 내용 바로 뒤에 그 특허의 출원번호를 붙인다.',
@@ -217,13 +230,15 @@ const scopeKey = ({ level1 = '', level2 = '', level3 = '' }) => ({ level1: level
 export async function generateTrendSummary({ level1, level2, level3, from, to }, { source = 'manual' } = {}) {
   if (!isAiConfigured()) throw new Error('AI 설정(AI_BASE_URL, AI_MODEL)이 비어 있어요');
   const scope = scopeKey({ level1, level2, level3 });
-  const { facts, statText, evidence } = buildSummaryInput({ ...scope, from, to });
+  const { facts, statText, evidence, structuredStats } = buildSummaryInput({ ...scope, from, to });
   const started = Date.now();
   const content = await chat([
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: `[자료]\n${facts}\n\n위 자료로 동향 요약을 써 줘.` },
   ], { maxTokens: 8000, purpose: 'trend-summary', timeoutMs: 180_000 }); // 추론형 모델은 생각에도 토큰을 써서 2000이면 잘렸고 6000에서도 가끔 잘려 8000, 무료 모델은 1분을 넘기기도 한다
   const checks = checkSummary(content, statText, evidence);
+  Object.assign(checks, checkStatistics(content, structuredStats));
+  checks.evidenceWarnings = evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [];
   const row = {
     ...scope,
     period_from: from,
