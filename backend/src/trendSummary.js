@@ -8,6 +8,7 @@ import { CRITERIA_VERSION } from './classification.js';
 import { checkSummary, SECTIONS } from './summaryCheck.js';
 import { burstTerms } from './emerging.js';
 import { checkStatistics } from './summaryStatCheck.js';
+import { groundInterpretations } from './summaryEvidence.js';
 
 const COMPANY = { own: '자사(LG디스플레이)', competitor: '경쟁사(삼성디스플레이)', china: '중국 경쟁사(BOE·CSOT·Tianma·Visionox)' };
 const EVIDENCE_LIMIT = 10;
@@ -81,7 +82,7 @@ export function selectSummaryEvidence({ scope, from, to, data, bursts }, databas
       field: e.field,
       reason,
       title: e.title,
-      fullText: `${e.title} ${e.abstract ?? ''}`, // 검사용: 초록 전체
+      fullText: `${e.title} ${(e.abstract ?? '').replace(/\s+/g, ' ').slice(0, 300)}`, // AI에게 전달한 범위와 동일
       abstract: (e.abstract ?? '').replace(/\s+/g, ' ').slice(0, 300),
     }));
 }
@@ -179,11 +180,11 @@ const SYSTEM_PROMPT = [
   '규칙:',
   '- 숫자(건수, %, 연도)는 아래 [자료]에 적힌 값을 그대로만 쓴다. 비중·차이·합계·배율을 새로 계산하지 않는다. 필요한 비중은 [분야별 비중]에 있다.',
   '- 수치가 포함된 문장마다 회사, 정확한 분야명, 연도와 지표(출원 건수·비중·증감률)를 명시한다. 한 문장에는 한 회사와 한 분야만 쓴다.',
+  '- 해석과 한계와 주목 특허를 제외한 각 줄은 "- 자사 기술분야 2022년 100건"처럼 회사·정확한 분야·연도·건수만 쓴다. 임의의 설명은 추가하지 않는다.',
   '- 특허를 언급할 때는 [근거 후보 특허]의 출원번호를 괄호로 붙인다. 목록에 없는 특허는 언급하지 않는다.',
   '- 특허 하나를 설명할 때는 그 특허의 명칭과 초록에 있는 내용만 쓴다. 다른 특허의 내용을 섞지 않는다. 회사(자사/경쟁사/중국 경쟁사)도 그 특허 줄에 적힌 대로 쓴다.',
   '- 한 문장에서 특허 여러 건을 언급할 때는 각 내용 바로 뒤에 그 특허의 출원번호를 붙인다.',
-  '- 해석은 써도 된다. 단, 해석마다 근거(자료의 숫자, [급증 용어], 근거 특허 출원번호 중 둘 이상)를 함께 쓰고, "~로 보인다", "~가능성이 있다"처럼 추정임을 밝힌다.',
-  '  예: "급증 용어 \'광학 부재\'(6/0)가 새로 나타나고 근거 특허(출원번호)도 광학 부재를 다뤄, 패널 위 광학 구조에 관심이 커진 것으로 보인다."',
+  '- 해석 줄은 반드시 "- 해석: 회사 분야 연도 통계 | 출원번호 13자리 | 「명칭 또는 전달된 초록에서 그대로 복사한 6자 이상 원문」" 형식으로 작성한다. 특허와 통계의 회사·분야가 같아야 한다. 조건을 충족하지 못하면 "- 해석: 판단 근거 부족"이라고 쓴다.',
   '- 전체 분량은 한 화면(900자 안팎)으로 짧게 쓴다. 핵심 흐름을 뺀 칸은 칸마다 2~3줄이다. 보고서처럼 길게 풀어 쓰지 않는다.',
   '- 연도별 건수를 차례로 나열하지 않는다(그래프에 있다). 첫해와 마지막 해 두 값과 증감률만 쓴다. 예: "2022년 120건 → 2024년 180건(50% 증가)".',
   '- 해석은 "어떤 기술 주제에 관심이 커졌다" 수준까지만 쓴다. "성숙 단계", "전략", "주력", "집중 투자", "경쟁 심화", "본격화", "선점", "핵심 분야", "핵심 연구", "지속적으로 투자", "집중하는"처럼 회사 의도나 산업 단계를 단정하는 말은 쓰지 않는다.',
@@ -198,7 +199,7 @@ const SYSTEM_PROMPT = [
   '- 자료에 없는 외부 지식(시장 상황, 제품 출시, 회사 전략 발표 등)으로 원인을 설명하지 않는다. 미래 전망은 쓰지 않는다.',
   '- 선택한 범위·기간에 분류된 출원이 없으면 근거 부족을 명시하고 성장 분야나 특허 동향을 추정하지 않는다.',
   '- 핵심 흐름은 정확히 3줄이고, 각 줄은 "- "로 시작한다.',
-  '- "성장 분야"와 "경쟁사 동향" 칸은 사실을 쓴 뒤 마지막에 "해석:"으로 시작하는 문장을 칸마다 정확히 1개 쓴다. 해석에는 위 규칙대로 근거와 추정 표현을 넣는다. 사실 문장에서 이미 한 말을 해석에서 되풀이하지 않는다.',
+  '- "성장 분야"와 "경쟁사 동향" 칸의 마지막에 지정된 형식의 "해석:" 줄을 정확히 1개 쓴다.',
   '- 증감률은 첫해 대비 마지막 해 값이다(예: "2022년 대비 2024년 24% 증가"). "전년 대비"라고 쓰지 않는다.',
   '- "가장 높다/가장 많이 늘었다" 같은 순위 표현은 [증감률 순위]와 [분야별 비중]에 적힌 순서대로만 쓴다.',
   '- 특허 설명에 초록에 없는 효과(신뢰성 강화, 내구성 향상 등)를 덧붙이지 않는다.',
@@ -232,13 +233,15 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
   const scope = scopeKey({ level1, level2, level3 });
   const { facts, statText, evidence, structuredStats } = buildSummaryInput({ ...scope, from, to });
   const started = Date.now();
-  const content = await chat([
+  const answer = await chat([
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: `[자료]\n${facts}\n\n위 자료로 동향 요약을 써 줘.` },
   ], { maxTokens: 8000, purpose: 'trend-summary', timeoutMs: 180_000 }); // 추론형 모델은 생각에도 토큰을 써서 2000이면 잘렸고 6000에서도 가끔 잘려 8000, 무료 모델은 1분을 넘기기도 한다
+  const grounded = groundInterpretations(answer, evidence, structuredStats);
+  const content = grounded.content;
   const checks = checkSummary(content, statText, evidence);
-  Object.assign(checks, checkStatistics(content, structuredStats));
-  checks.evidenceWarnings = evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [];
+  Object.assign(checks, checkStatistics(answer, structuredStats));
+  checks.evidenceWarnings = [...grounded.warnings, ...(evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [])];
   const row = {
     ...scope,
     period_from: from,

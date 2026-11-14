@@ -156,6 +156,17 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
           <div className="ai-summary-body">
             <SummaryBody content={s.content} evidence={s.evidence} onOpen={onOpenPatent} />
           </div>
+          {s.evidence?.length > 0 && (
+            <details>
+              <summary>근거 후보 특허 보기</summary>
+              <ul>{s.evidence.map((e) => (
+                <li key={e.number}>
+                  <button className="appno-link" onClick={() => onOpenPatent(e.id)}>{formatAppNo(e.number)}</button>
+                  {' '}· {e.title} · {e.reason}
+                </li>
+              ))}</ul>
+            </details>
+          )}
           <p className="ask-note">
             AI가 DB 숫자와 근거 특허만 보고 쓴 초안이에요. "해석:" 문장은 추정이니 근거 특허를 눌러 확인해 주세요.
           </p>

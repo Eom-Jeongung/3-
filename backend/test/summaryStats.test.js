@@ -102,6 +102,25 @@ test('다섯 3차 기술 각각에서 세 회사의 마지막 해 근거 특허�
   }
 });
 
+test('특허 검사에는 AI에게 전달한 300자 초록만 사용한다', () => {
+  db.exec('SAVEPOINT abstract_test');
+  try {
+    db.prepare('UPDATE patents SET abstract = ? WHERE application_number IN (SELECT application_number FROM classification WHERE level2 = ? AND level3 = ?)')
+      .run('가'.repeat(320) + '초록 뒤쪽 비공개 검사 문구', '설계', fields[0]);
+    const { evidence, facts } = buildSummaryInput({ ...scope, level3: fields[0] });
+    assert.ok(evidence.length);
+    for (const item of evidence) {
+      assert.equal(item.fullText, `${item.title} ${item.abstract}`);
+      assert.equal(item.abstract.length, 300);
+      assert.ok(!item.fullText.includes('초록 뒤쪽'));
+      assert.ok(facts.includes(item.abstract));
+    }
+  } finally {
+    db.exec('ROLLBACK TO abstract_test');
+    db.exec('RELEASE abstract_test');
+  }
+});
+
 test('급증 용어 후보는 다른 회사·분야·기간·분류 버전·부 분류를 제외하고 다음 후보를 선택한다', () => {
   add({ year: 2024, field: fields[0] });
   const selectedScope = { ...scope, level3: fields[0] };
