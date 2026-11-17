@@ -297,13 +297,16 @@ export function latestSummary({ level1, level2, level3, from, to }) {
   `).get({ ...s, from, to }));
 }
 
-/** 보관함: 한 범위(1·2·3차)에서 지금까지 만든 요약 목록 (기간 상관없이 최신순, 본문 제외) */
-export function listSummaries({ level1, level2, level3 }, limit = 100) {
-  const s = scopeKey({ level1, level2, level3 });
+/**
+ * 보관함: 지금까지 만든 요약 목록 (기간 상관없이 최신순, 본문 제외)
+ * scope를 주면 그 범위(1·2·3차)만, null이면 모든 분류 — 목록에서 어떤 분류·기간인지 보고 고를 수 있게 분류도 돌려준다
+ */
+export function listSummaries(scope, limit = 300) {
+  const where = scope ? 'WHERE level1 = @level1 AND level2 = @level2 AND level3 = @level3' : '';
   return db.prepare(`
-    SELECT id, created_at, period_from, period_to, model, source, criteria_version, checks
+    SELECT id, created_at, level1, level2, level3, period_from, period_to, model, source, criteria_version, checks
     FROM trend_summaries
-    WHERE level1 = @level1 AND level2 = @level2 AND level3 = @level3
+    ${where}
     ORDER BY id DESC LIMIT @limit
-  `).all({ ...s, limit }).map((r) => ({ ...r, checks: JSON.parse(r.checks) }));
+  `).all({ ...(scope ? scopeKey(scope) : {}), limit }).map((r) => ({ ...r, checks: JSON.parse(r.checks) }));
 }

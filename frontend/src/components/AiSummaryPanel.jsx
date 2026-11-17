@@ -1,5 +1,8 @@
 import { Fragment, useEffect, useState } from 'react'
 import { summaryCheckStatus } from './summaryCheckStatus.js'
+import { scopeHref } from './FieldPicker.jsx'
+
+const scopeNameOf = (x) => [x.level1, x.level2, x.level3].filter(Boolean).join(' › ') || '전체 분야'
 
 // 1020230116992 -> 10-2023-0116992
 const formatAppNo = (n) => `${n.slice(0, 2)}-${n.slice(2, 6)}-${n.slice(6)}`
@@ -93,9 +96,10 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [showFacts, setShowFacts] = useState(false)
-  const [archive, setArchive] = useState(null) // 보관함: 이 범위에서 만든 요약 목록
+  const [archive, setArchive] = useState(null) // 보관함: 모든 분류에서 만든 요약 목록 (항목마다 분류가 있다)
   const [archiveTry, setArchiveTry] = useState(0) // 새로 만들면 올려서 목록을 다시 받는다
   const [showArchive, setShowArchive] = useState(false)
+  const [archiveHere, setArchiveHere] = useState(false) // true면 지금 분류의 요약만
   const [viewing, setViewing] = useState(null) // 보관함에서 고른 지난 요약 (없으면 최신 요약)
   const [copied, setCopied] = useState(false)
   const { level1 = '', level2 = '', level3 = '' } = scope
@@ -105,13 +109,20 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
 
   useEffect(() => {
     let cancelled = false
-    const q = new URLSearchParams({ level1, level2, level3 })
-    fetch(`/api/summaries/archive?${q}`)
+    fetch('/api/summaries/archive?all=1')
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((body) => { if (!cancelled) setArchive(body.items) })
       .catch(() => { if (!cancelled) setArchive(null) })
     return () => { cancelled = true }
-  }, [level1, level2, level3, archiveTry])
+  }, [archiveTry])
+
+  // 보관함에서 다른 분류의 요약을 고르면 주소에 sid를 붙여 그 분류 화면으로 온다 → 열리자마자 그 요약을 보여 준다
+  const sid = scope.sid
+  useEffect(() => {
+    if (sid && /^\d+$/.test(sid)) openArchived(Number(sid))
+    // 화면이 열릴 때 한 번만
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -174,9 +185,20 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
     }
   }
 
+  const isHere = (a) => a.level1 === level1 && a.level2 === level2 && a.level3 === level3
+  // 다른 분류의 요약이면 그 분류 화면으로 이동해서 연다 (분류 선택 칸·제목이 요약과 맞게)
+  function pickArchived(a) {
+    if (isHere(a)) { openArchived(a.id); return }
+    const href = scopeHref('summary', a)
+    window.location.hash = `${href}${href.includes('?') ? '&' : '?'}sid=${a.id}`
+  }
+  const archiveShown = archive ? (archiveHere ? archive.filter(isHere) : archive) : []
+  const hereCount = archive ? archive.filter(isHere).length : 0
+
   const s = viewing ?? (state?.summary || null)
   const { issues, missing: olderChecks } = summaryCheckStatus(s?.checks)
-  const stale = s && state.criteriaVersion && s.criteria_version !== state.criteriaVersion
+  // 보관함 요약은 화면 기본 정보(state)보다 먼저 도착할 수 있어 state가 없을 수도 있다
+  const stale = s && state?.criteriaVersion && s.criteria_version !== state.criteriaVersion
 
   return (
     <div className="ai-summary">
@@ -208,14 +230,22 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
 
       {showArchive && archive?.length > 0 && (
         <div className="summary-archive">
-          <p className="table-meta">이 분야에서 지금까지 만든 요약이에요. 다시 만들어도 예전 요약은 지워지지 않고 여기 남아요.</p>
+          <div className="archive-head">
+            <p className="table-meta">지금까지 만든 요약이에요. 분류와 기간을 보고 고르면 그 요약이 열려요. 다시 만들어도 예전 요약은 지워지지 않아요.</p>
+            <div className="filter-group" role="group" aria-label="보관함 범위">
+              <button className={`chip ${!archiveHere ? 'active' : ''}`} aria-pressed={!archiveHere} onClick={() => setArchiveHere(false)}>모든 분류 <span className="chip-count">{archive.length}</span></button>
+              <button className={`chip ${archiveHere ? 'active' : ''}`} aria-pressed={archiveHere} onClick={() => setArchiveHere(true)}>{scopeName}만 <span className="chip-count">{hereCount}</span></button>
+            </div>
+          </div>
+          {archiveShown.length === 0 && <p className="placeholder-text">{scopeName}에서 만든 요약이 아직 없어요.</p>}
           <ul>
-            {archive.map((a) => {
+            {archiveShown.map((a) => {
               const { issues, missing } = summaryCheckStatus(a.checks)
               const current = s?.id === a.id
               return (
                 <li key={a.id}>
-                  <button className={`archive-item ${current ? 'current' : ''}`} onClick={() => openArchived(a.id)} aria-current={current || undefined}>
+                  <button className={`archive-item ${current ? 'current' : ''}`} onClick={() => pickArchived(a)} aria-current={current || undefined}>
+                    <span className={`archive-scope ${isHere(a) ? 'here' : ''}`}>{scopeNameOf(a)}</span>
                     <b>{a.period_from}~{a.period_to}년</b>
                     <span>{formatWhen(a.created_at)}</span>
                     <span className="muted">{a.source === 'auto' ? '분기 자동' : '직접 만듦'} · {a.model || '-'}</span>
@@ -233,7 +263,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
 
       {viewing && (
         <p className="archive-banner" role="status">
-          보관함에서 고른 <b>{viewing.period_from}~{viewing.period_to}년</b> 요약({formatWhen(viewing.created_at)})을 보고 있어요.
+          보관함에서 고른 <b>{scopeNameOf(viewing)} · {viewing.period_from}~{viewing.period_to}년</b> 요약({formatWhen(viewing.created_at)})을 보고 있어요.
           {' '}<button className="more-link" onClick={() => setViewing(null)}>최신 요약으로 돌아가기</button>
         </p>
       )}

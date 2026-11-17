@@ -32,9 +32,11 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/summaries/archive?level1=&level2=&level3= → 보관함: 이 범위에서 만든 요약 목록 (기간 상관없이 최신순)
+// GET /api/summaries/archive?all=1 → 모든 분류의 요약 목록 (항목마다 1·2·3차 분류가 들어 있다)
 router.get('/archive', (req, res) => {
   const pick = (k) => (typeof req.query[k] === 'string' ? req.query[k].trim() : '');
-  res.json({ items: listSummaries({ level1: pick('level1'), level2: pick('level2'), level3: pick('level3') }) });
+  const scope = req.query.all === '1' ? null : { level1: pick('level1'), level2: pick('level2'), level3: pick('level3') };
+  res.json({ items: listSummaries(scope) });
 });
 
 // GET /api/summaries/:id → 보관함에서 고른 요약 하나
