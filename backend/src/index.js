@@ -10,10 +10,16 @@ import trendsRouter from './routes/trends.js';
 import summariesRouter from './routes/summaries.js';
 import { startScheduler } from './scheduler.js';
 import { warmUpEmerging } from './emerging.js';
+import { siteAuth } from './siteAuth.js';
 
 initSchema();
 
 const app = express();
+
+// 서버 상태 확인 (Render가 살아 있는지 보는 주소). 비밀번호 없이 열린다
+app.get('/api/health', (req, res) => res.json({ ok: true }));
+
+app.use(siteAuth(process.env.SITE_PASSWORD));
 app.use(express.json());
 
 app.use('/api/patents', patentsRouter);
@@ -30,7 +36,10 @@ if (serveScreen) app.use(express.static(distDir));
 
 // PORT가 아닌 API_PORT를 쓴다: 미리보기·호스팅 환경이 PORT를 프론트엔드용으로 미리 넣어두는 경우가 있어 충돌함
 // API_PORT가 없고 PORT만 있으면(천안 서버) 수업 규칙대로 PORT + 100을 쓴다
-const port = Number(process.env.API_PORT) || (Number(process.env.PORT) ? Number(process.env.PORT) + 100 : 4000);
+// Render는 RENDER=true와 함께 서버가 받아야 할 PORT를 넣어 주므로, 그때는 PORT를 그대로 쓴다
+const port = Number(process.env.API_PORT)
+  || (process.env.RENDER && Number(process.env.PORT))
+  || (Number(process.env.PORT) ? Number(process.env.PORT) + 100 : 4000);
 app.listen(port, () => {
   console.log(`API 서버: http://localhost:${port}`);
   if (serveScreen) console.log(`화면(빌드본): http://localhost:${port}`);

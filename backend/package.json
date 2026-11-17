@@ -14,7 +14,8 @@
     "dev": "node --env-file-if-exists=.env --watch src/index.js",
     "start": "node --env-file-if-exists=.env src/index.js",
     "auto-summary": "node --env-file-if-exists=.env scripts/auto-summary.js",
-    "summary-trial": "node --env-file-if-exists=.env scripts/summary-trial.js"
+    "summary-trial": "node --env-file-if-exists=.env scripts/summary-trial.js",
+    "test": "node --test test/*.test.js"
   },
   "keywords": [],
   "author": "",
