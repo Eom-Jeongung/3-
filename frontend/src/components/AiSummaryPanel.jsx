@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
+import { summaryCheckStatus } from './summaryCheckStatus.js'
 
 // 1020230116992 -> 10-2023-0116992
 const formatAppNo = (n) => `${n.slice(0, 2)}-${n.slice(2, 6)}-${n.slice(6)}`
@@ -41,17 +42,6 @@ function SummaryBody({ content, evidence, onOpen }) {
   }
   return blocks
 }
-
-const CHECKS = [
-  ['strangeNumbers', '자료에 없는 숫자'],
-  ['strangePatents', '근거 목록에 없는 출원번호'],
-  ['mixups', '다른 특허 내용이 섞였을 수 있는 인용'],
-  ['unsupported', '특허 초록에 없는 효과를 덧붙였을 수 있음'],
-  ['overreach', '근거보다 강한 해석(회사 의도·산업 단계 단정)'],
-  ['missingSections', '빠진 칸(답이 잘렸을 수 있음)'],
-  ['wrongReasons', '주목 특허에 다른 특허의 선정 이유를 붙임'],
-  ['formatIssues', '너무 김(한 화면 분량을 넘음)'],
-]
 
 const FIRST_YEAR = 2000 // 기간 목록의 첫해
 
@@ -111,7 +101,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
   }
 
   const s = state?.summary || null
-  const issues = s ? CHECKS.filter(([k]) => s.checks[k]?.length) : []
+  const { issues, missing: olderChecks } = summaryCheckStatus(s?.checks)
   const stale = s && state.criteriaVersion && s.criteria_version !== state.criteriaVersion
 
   return (
@@ -153,17 +143,30 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
             {stale && <b className="warn-text"> (지금 기준 {state.criteriaVersion}과 달라요. 다시 만들기를 권해요)</b>}
             {' '}· {new Date(`${s.created_at.replace(' ', 'T')}Z`).toLocaleString('ko-KR')}
           </p>
-          {issues.length === 0
-            ? <p className="check-ok">자동 검사 통과: 자료에 없는 숫자·출원번호, 특허 내용 섞임, 초록에 없는 효과, 과한 해석, 빠진 칸, 선정 이유 불일치 없음</p>
+          {issues.length === 0 && !olderChecks
+            ? <p className="check-ok">규칙 기반 자동 검사에서 경고를 발견하지 못했어요. 모든 수치와 해석의 정확성을 보장하지 않으니 근거를 확인해 주세요.</p>
             : (
-              <div className="check-warn">
+              <div className="check-warn" role="status">
                 <b>자동 검사에서 확인이 필요한 부분이 있어요</b>
-                <ul>{issues.map(([k, label]) => <li key={k}>{label}: {s.checks[k].join(' / ')}</li>)}</ul>
+                {olderChecks && <p>이전에 생성된 요약이라 새 통계·근거 검사가 적용되지 않았어요. 다시 만들면 검사할 수 있어요.</p>}
+                {issues.length > 0 && <ul>{issues.map(([k, label]) => <li key={k}>{label}: {s.checks[k].join(' / ')}</li>)}</ul>}
+                <p>자동 검사는 모든 오류를 찾지 못할 수 있으니 자료와 근거 특허를 확인해 주세요.</p>
               </div>
             )}
           <div className="ai-summary-body">
             <SummaryBody content={s.content} evidence={s.evidence} onOpen={onOpenPatent} />
           </div>
+          {s.evidence?.length > 0 && (
+            <details>
+              <summary>근거 후보 특허 보기</summary>
+              <ul>{s.evidence.map((e) => (
+                <li key={e.number}>
+                  <button className="appno-link" onClick={() => onOpenPatent(e.id)}>{formatAppNo(e.number)}</button>
+                  {' '}· {e.title} · {e.reason}
+                </li>
+              ))}</ul>
+            </details>
+          )}
           <p className="footnote">
             AI가 DB 숫자와 근거 특허만 보고 쓴 초안이에요. "해석:" 문장은 추정이니 근거 특허를 눌러 확인해 주세요.
           </p>

@@ -2,11 +2,13 @@
 // - 숫자는 DB에서 계산한 값만 AI에게 준다 (비중도 미리 계산). 답은 summaryCheck.js로 검사한다
 // - 화면(routes/summaries.js)과 시험 스크립트(scripts/summary-trial.js)가 함께 쓴다
 import { db } from './db.js';
-import { getSeries } from './trendData.js';
+import { getSummaryStats, MIN_COUNT } from './summaryStats.js';
 import { chat, isAiConfigured } from './ai.js';
 import { CRITERIA_VERSION } from './classification.js';
 import { checkSummary, SECTIONS } from './summaryCheck.js';
 import { burstTerms } from './emerging.js';
+import { checkStatistics } from './summaryStatCheck.js';
+import { groundInterpretations } from './summaryEvidence.js';
 
 const COMPANY = { own: '자사(LG디스플레이)', competitor: '경쟁사(삼성디스플레이)', china: '중국 경쟁사(BOE·CSOT·Tianma·Visionox)' };
 const EVIDENCE_LIMIT = 10;
@@ -19,90 +21,56 @@ const isWeakTerm = (t) => {
   // "보다 상세하게", "~에 따르면" 같은 문장 표현도 뺀다
   return k.length < 3 || /^제\d/.test(k) || WEAK_TERMS.has(k) || /(하게|따르면|의하면|위하여|관한)$/.test(k);
 };
-const MIN_COUNT = 30; // 30건 미만은 %가 크게 흔들려 증감률을 내지 않는다
-const pct = (a, b) => (a >= MIN_COUNT ? Math.round(((b - a) / a) * 100) : null);
 const LEVELS = ['level1', 'level2', 'level3'];
 
 /** 요약 범위 이름 (예: "OLED > 소자"). 범위가 없으면 "전체" */
 export const scopeLabel = (scope) => LEVELS.map((k) => scope[k]).filter(Boolean).join(' > ') || '전체';
 
-/** AI에게 줄 자료(글), 통계 부분, 근거 특허를 만든다 */
-export function buildSummaryInput({ level1, level2, level3, from, to }) {
-  const scope = { level1, level2, level3 };
-  const data = getSeries({ years: Math.max(1, new Date().getFullYear() - from), unit: 'year', ...scope });
-  const keep = data.periods.map((p, i) => [p, i]).filter(([p]) => Number(p.key) >= from && Number(p.key) <= to);
-  if (keep.length < 2) throw new Error(`${from}~${to}년에 비교할 연도가 부족해요`);
-  const incomplete = keep.filter(([p]) => p.incomplete).map(([p]) => p.label);
-  const { groups } = data;
-
-  const table = [];
-  for (const company of data.companies) {
-    for (const group of groups) {
-      const counts = keep.map(([, i]) => data.series[company][group][i]);
-      if (counts.every((n) => n === 0)) continue;
-      table.push({ company, group, counts, change: pct(counts[0], counts.at(-1)) });
-    }
-  }
-  const totals = data.companies.map((company) => {
-    const counts = keep.map(([, i]) => groups.reduce((s, g) => s + data.series[company][g][i], 0));
-    return { company, counts, change: pct(counts[0], counts.at(-1)) };
-  });
-  // 비중은 AI가 계산하지 않도록 미리 계산한다 (시험에서 AI가 "약 51%"를 직접 계산했다)
-  const last = keep.length - 1;
-  const shares = table.map((t) => {
-    const total = totals.find((x) => x.company === t.company).counts[last];
-    return { ...t, share: total ? Math.round((t.counts[last] / total) * 100) : null };
-  });
-
-  // 급증 용어: 마지막 해 출원을 그 전 해들과 비교해 갑자기 많이 나온 용어 (emerging.js, AI 없이 계산)
-  // 해석의 근거로 쓰고, 그 용어가 나온 특허를 "주목 특허" 후보로 먼저 뽑는다
-  const bursts = {};
-  for (const company of Object.keys(COMPANY)) {
-    const { rows } = burstTerms({
-      applicant: company, ...scope, dateField: 'application_date',
-      pastFrom: `${from}-01-01`, recentFrom: `${to}-01-01`, ref: `${to}-12-31`,
-    });
-    bursts[company] = rows.filter((r) => !isWeakTerm(r.term)).slice(0, BURST_LIMIT)
-      .map((r) => ({ term: cleanTerm(r.term), recent: r.recentDocs, past: r.pastDocs, examples: r.examples.map((x) => x.applicationNumber) }));
-  }
-
+/** 후보가 요청한 회사·분류·기간에 실제로 속하는지 확인한 뒤에만 선정한다. */
+export function selectSummaryEvidence({ scope, from, to, data, bursts }, database = db) {
   // 근거 특허: ① 급증 용어가 나온 특허(회사별 상위 3개 용어에서 1건씩) ② 증감이 큰 분야(회사별 2개)의 마지막 해 출원 1건씩
   // 매번 같은 특허(결과를 비교할 수 있게), 날짜에 몰리지 않게
-  const groupCol = data.groupLevel ?? 'level1';
+  const groupCol = data.groupLevel ?? 'level3';
   const scopeWhere = LEVELS.filter((k) => scope[k]).map((k) => `AND c.${k} = @${k}`).join(' ');
-  const detail = db.prepare(`
+  const detail = database.prepare(`
     SELECT p.id, p.application_number number, p.applicant_type company, p.application_date date, p.legal_status status,
       c.${groupCol} field, p.title, p.abstract
     FROM patents p JOIN classification c ON c.application_number = p.application_number AND c.is_primary = 1 AND +c.criteria_version = @version
-    WHERE p.application_number = @number
+    WHERE p.application_number = @number AND p.applicant_type = @company ${scopeWhere}
+      AND p.application_date BETWEEN @from AND @to
   `);
-  const pick = db.prepare(`
+  const pick = database.prepare(`
     SELECT p.application_number number
     FROM patents p JOIN classification c ON c.application_number = p.application_number
-    WHERE c.is_primary = 1 AND +c.criteria_version = @version ${scopeWhere} AND c.${groupCol} = @group
+    WHERE c.is_primary = 1 AND +c.criteria_version = @version ${scopeWhere}
+      ${data.groupLevel ? `AND c.${groupCol} = @group` : ''}
       AND p.applicant_type = @company AND substr(p.application_date, 1, 4) = @year
     ORDER BY (CAST(substr(p.application_number, -6) AS INTEGER) * 7919) % 1000 LIMIT 3
   `);
-  const chosen = new Map(); // 출원번호 → 선정 이유
+  const chosen = new Map(); // 출원번호 → 검증된 특허와 선정 이유
+  const choose = (numbers, company, reason) => {
+    for (const number of numbers) {
+      if (chosen.has(number)) continue;
+      const e = detail.get({ ...scope, number, company, version: CRITERIA_VERSION, from: `${from}-01-01`, to: `${to}-12-31` });
+      if (e) { chosen.set(number, { e, reason }); return; }
+    }
+  };
   for (const company of Object.keys(COMPANY)) {
-    for (const b of bursts[company].slice(0, 3)) {
-      const n = b.examples.find((x) => !chosen.has(x));
-      if (n) chosen.set(n, `급증 용어 "${b.term}"`);
+    for (const b of (bursts[company] ?? []).slice(0, 3)) {
+      choose(b.examples, company, `급증 용어 "${b.term}"`);
     }
   }
   const moveSize = (t) => (t.change !== null ? Math.abs(t.change) * 1000 : 0) + Math.abs(t.counts.at(-1) - t.counts[0]);
-  const movers = Object.keys(COMPANY).flatMap((company) => table
+  const movers = Object.keys(COMPANY).flatMap((company) => data.table
     .filter((t) => t.company === company && t.counts.at(-1) > 0 && !['미분류', '그 외'].includes(t.group))
     .sort((a, b) => moveSize(b) - moveSize(a))
     .slice(0, 2));
   for (const t of movers) {
-    const n = pick.all({ version: CRITERIA_VERSION, ...scope, group: t.group, company: t.company, year: String(to) })
-      .map((r) => r.number).find((x) => !chosen.has(x));
-    if (n) chosen.set(n, `증감이 큰 분야 "${t.group}"`);
+    const numbers = pick.all({ version: CRITERIA_VERSION, ...scope, group: t.group, company: t.company, year: String(to) })
+      .map((r) => r.number);
+    choose(numbers, t.company, `증감이 큰 분야 "${data.groupLevel ? t.group : scope.level3}"`);
   }
-  const evidence = [...chosen].slice(0, EVIDENCE_LIMIT)
-    .map(([number, reason]) => ({ e: detail.get({ number, version: CRITERIA_VERSION }), reason }))
-    .filter(({ e }) => e)
+  return [...chosen.values()].slice(0, EVIDENCE_LIMIT)
     .map(({ e, reason }) => ({
       id: e.id,
       number: e.number,
@@ -113,9 +81,32 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
       field: e.field,
       reason,
       title: e.title,
-      fullText: `${e.title} ${e.abstract ?? ''}`, // 검사용: 초록 전체
+      fullText: `${e.title} ${(e.abstract ?? '').replace(/\s+/g, ' ').slice(0, 300)}`, // AI에게 전달한 범위와 동일
       abstract: (e.abstract ?? '').replace(/\s+/g, ' ').slice(0, 300),
     }));
+}
+
+/** AI에게 줄 자료(글), 통계 부분, 근거 특허를 만든다 */
+export function buildSummaryInput({ level1, level2, level3, from, to }) {
+  const scope = { level1, level2, level3 };
+  const data = getSummaryStats(db, { ...scope, from, to }, CRITERIA_VERSION);
+  const keep = data.periods.map((p, i) => [p, i]).filter(([p]) => Number(p.key) >= from && Number(p.key) <= to);
+  if (keep.length < 2) throw new Error(`${from}~${to}년에 비교할 연도가 부족해요`);
+  const incomplete = keep.filter(([p]) => p.incomplete).map(([p]) => p.label);
+  const { table, totals } = data;
+  const shares = table;
+
+  // 급증 용어는 마지막 해 출원을 이전 연도들과 비교한다.
+  const bursts = {};
+  for (const company of Object.keys(COMPANY)) {
+    const { rows } = burstTerms({
+      applicant: company, ...scope, dateField: 'application_date',
+      pastFrom: `${from}-01-01`, recentFrom: `${to}-01-01`, ref: `${to}-12-31`,
+    });
+    bursts[company] = rows.filter((r) => !isWeakTerm(r.term)).slice(0, BURST_LIMIT)
+      .map((r) => ({ term: cleanTerm(r.term), recent: r.recentDocs, past: r.pastDocs, examples: r.examples.map((x) => x.applicationNumber) }));
+  }
+  const evidence = selectSummaryEvidence({ scope, from, to, data, bursts });
 
   // 증감률 순위: "가장 많이 늘었다" 같은 말을 AI가 직접 비교하지 않게 미리 정렬해 준다
   const ranks = Object.keys(COMPANY).map((company) => {
@@ -126,14 +117,29 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
   });
 
   const years = keep.map(([p]) => p.key);
+  const structuredStats = {
+    from, to, fields: data.groups, minimumSample: MIN_COUNT,
+    values: table.flatMap((row) => [
+      ...years.map((year, i) => ({ company: row.company, field: row.group, year: Number(year), metric: 'count', value: row.counts[i] })),
+      { company: row.company, field: row.group, year: to, metric: 'share', value: row.share },
+      { company: row.company, field: row.group, year: to, metric: 'change', value: row.change },
+    ]),
+  };
   // 중국 경쟁사는 한국 출원이 원래 적어 거의 늘 30건 미만이므로, 자사·삼성 기준 주의와 따로 알린다
   const smallData = totals.filter((t) => t.company !== 'china').some((t) => t.counts.some((n) => n < MIN_COUNT));
   const chinaSmall = totals.some((t) => t.company === 'china' && t.counts.some((n) => n < MIN_COUNT));
-  const changeText = (c) => (c === null ? '계산 안 함(30건 미만)' : `${c}%`);
+  const dataWarnings = data.companies.flatMap((company) => data.groups.flatMap((field) => {
+    const small = data.series[company][field].map((count, i) => ({ count, year: years[i] })).filter(({ count }) => count < MIN_COUNT);
+    return small.length ? [`${COMPANY[company]} · ${field === '전체' ? (scope.level3 || field) : field}: ${small.map(({ year, count }) => `${year}년 ${count}건`).join(', ')} (기존 주의 기준 ${MIN_COUNT}건 미만)`] : [];
+  }));
+  if (data.noMatches) dataWarnings.push('선택 범위·기간에 분류된 출원이 없어 동향 판단이 어렵습니다.');
+  const changeText = (c) => (c === null ? '계산 안 함(첫해 또는 마지막 해 30건 미만)' : `${c}%`);
   const statText = [
     `분류: ${scopeLabel(scope)} (분류 기준 ${CRITERIA_VERSION}), 기간: ${from}~${to}년 출원`,
     `연도: ${years.join(', ')}`,
+    data.noMatches ? '선택한 범위·기간에 해당 분류 기준으로 분류된 출원이 없습니다. 데이터 수집·분류가 완전하다는 뜻은 아닙니다.' : '',
     incomplete.length ? `아직 공개가 덜 된 연도(건수가 적게 보임): ${incomplete.join(', ')}` : '',
+    ...dataWarnings,
     smallData ? '주의: 연간 30건 미만인 회사·연도가 있어 몇 건 차이로도 흐름이 크게 달라 보일 수 있음' : '',
     chinaSmall ? '참고: 중국 경쟁사는 한국 출원이 연간 30건 미만인 해가 있어 증감을 해석하지 않음' : '',
     '',
@@ -150,15 +156,19 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
     ...ranks,
     '',
     `[급증 용어 (${to}년 출원을 ${from}~${to - 1}년과 비교, 명칭·초록에서 자동 추출, 괄호는 ${to}년 건수 / 이전 건수)]`,
+    '집계 기준 차이: 출원 건수는 주 분류 출원번호 기준으로 패밀리·후속 출원을 포함한다. 급증 용어는 회사별 같은 초록 앞 200자 기준 중복 제거 후 용어가 나온 문서 수이며, 마지막 해와 그 이전 여러 해의 출현 비율을 비교한다. 두 수치는 직접 비교할 수 없다.',
     ...Object.keys(COMPANY).map((c) => `${COMPANY[c]}: ${bursts[c].length ? bursts[c].map((b) => `${b.term}(${b.recent}/${b.past})`).join(', ') : '(뚜렷한 급증 용어 없음)'}`),
   ].join('\n');
   const facts = [
     statText,
     '',
+    '[구조화 통계: company, field, year, metric(count=출원 건수, share=비중, change=첫해 대비 증감률), value]',
+    JSON.stringify(structuredStats),
+    '',
     '[근거 후보 특허] (출원번호 | 회사 | 출원일 | 상태 | 분야 | 선정 이유 | 명칭 | 초록 앞부분)',
     ...evidence.map((e) => `${e.number} | ${e.company} | ${e.date} | ${e.status} | ${e.field} | ${e.reason} | ${e.title} | ${e.abstract}`),
   ].join('\n');
-  return { facts, statText, evidence };
+  return { facts, statText, evidence, structuredStats, dataWarnings };
 }
 
 const UNPUBLISHED_MONTHS = 18; // trendData.js와 같은 기준: 출원 후 보통 18개월 뒤 공개
@@ -175,11 +185,12 @@ const SYSTEM_PROMPT = [
   '너는 디스플레이 기업의 특허 동향을 정리하는 분석가다. 한국어로 쓴다.',
   '규칙:',
   '- 숫자(건수, %, 연도)는 아래 [자료]에 적힌 값을 그대로만 쓴다. 비중·차이·합계·배율을 새로 계산하지 않는다. 필요한 비중은 [분야별 비중]에 있다.',
+  '- 수치가 포함된 문장마다 회사, 정확한 분야명, 연도와 지표(출원 건수·비중·증감률)를 명시한다. 한 문장에는 한 회사와 한 분야만 쓴다.',
+  '- 해석과 한계와 주목 특허를 제외한 각 줄은 "- 자사 기술분야 2022년 100건"처럼 회사·정확한 분야·연도·건수만 쓴다. 임의의 설명은 추가하지 않는다.',
   '- 특허를 언급할 때는 [근거 후보 특허]의 출원번호를 괄호로 붙인다. 목록에 없는 특허는 언급하지 않는다.',
   '- 특허 하나를 설명할 때는 그 특허의 명칭과 초록에 있는 내용만 쓴다. 다른 특허의 내용을 섞지 않는다. 회사(자사/경쟁사/중국 경쟁사)도 그 특허 줄에 적힌 대로 쓴다.',
   '- 한 문장에서 특허 여러 건을 언급할 때는 각 내용 바로 뒤에 그 특허의 출원번호를 붙인다.',
-  '- 해석은 써도 된다. 단, 해석마다 근거(자료의 숫자, [급증 용어], 근거 특허 출원번호 중 둘 이상)를 함께 쓰고, "~로 보인다", "~가능성이 있다"처럼 추정임을 밝힌다.',
-  '  예: "급증 용어 \'광학 부재\'(6/0)가 새로 나타나고 근거 특허(출원번호)도 광학 부재를 다뤄, 패널 위 광학 구조에 관심이 커진 것으로 보인다."',
+  '- 해석 줄은 반드시 "- 해석: 회사 분야 연도 통계 | 출원번호 13자리 | 「명칭 또는 전달된 초록에서 그대로 복사한 6자 이상 원문」" 형식으로 작성한다. 특허와 통계의 회사·분야가 같아야 한다. 조건을 충족하지 못하면 "- 해석: 판단 근거 부족"이라고 쓴다.',
   '- 전체 분량은 한 화면(900자 안팎)으로 짧게 쓴다. 핵심 흐름을 뺀 칸은 칸마다 2~3줄이다. 보고서처럼 길게 풀어 쓰지 않는다.',
   '- 연도별 건수를 차례로 나열하지 않는다(그래프에 있다). 첫해와 마지막 해 두 값과 증감률만 쓴다. 예: "2022년 120건 → 2024년 180건(50% 증가)".',
   '- 해석은 "어떤 기술 주제에 관심이 커졌다" 수준까지만 쓴다. "성숙 단계", "전략", "주력", "집중 투자", "경쟁 심화", "본격화", "선점", "핵심 분야", "핵심 연구", "지속적으로 투자", "집중하는"처럼 회사 의도나 산업 단계를 단정하는 말은 쓰지 않는다.',
@@ -192,8 +203,10 @@ const SYSTEM_PROMPT = [
   '- "성장 분야" 칸에는 첫해보다 마지막 해 건수가 늘어난 분야만 최대 3개 쓴다. 줄어든 분야는 이 칸에 쓰지 않는다.',
   '- "경쟁사 동향" 칸은 자사와 다른 점(경쟁사가 자사와 다르게 늘었거나 비중이 큰 분야) 위주로 쓴다.',
   '- 자료에 없는 외부 지식(시장 상황, 제품 출시, 회사 전략 발표 등)으로 원인을 설명하지 않는다. 미래 전망은 쓰지 않는다.',
+  '- 선택한 범위·기간에 분류된 출원이 없으면 근거 부족을 명시하고 성장 분야나 특허 동향을 추정하지 않는다.',
+  '- 분야·회사별 어느 연도라도 30건 미만이면 해당 범위의 성장이나 감소 추세를 단정하지 않는다. 30건은 기존 주의 기준이며 통계적 유의성을 뜻하지 않는다.',
   '- 핵심 흐름은 정확히 3줄이고, 각 줄은 "- "로 시작한다.',
-  '- "성장 분야"와 "경쟁사 동향" 칸은 사실을 쓴 뒤 마지막에 "해석:"으로 시작하는 문장을 칸마다 정확히 1개 쓴다. 해석에는 위 규칙대로 근거와 추정 표현을 넣는다. 사실 문장에서 이미 한 말을 해석에서 되풀이하지 않는다.',
+  '- "성장 분야"와 "경쟁사 동향" 칸의 마지막에 지정된 형식의 "해석:" 줄을 정확히 1개 쓴다.',
   '- 증감률은 첫해 대비 마지막 해 값이다(예: "2022년 대비 2024년 24% 증가"). "전년 대비"라고 쓰지 않는다.',
   '- "가장 높다/가장 많이 늘었다" 같은 순위 표현은 [증감률 순위]와 [분야별 비중]에 적힌 순서대로만 쓴다.',
   '- 특허 설명에 초록에 없는 효과(신뢰성 강화, 내구성 향상 등)를 덧붙이지 않는다.',
@@ -225,13 +238,29 @@ const scopeKey = ({ level1 = '', level2 = '', level3 = '' }) => ({ level1: level
 export async function generateTrendSummary({ level1, level2, level3, from, to }, { source = 'manual' } = {}) {
   if (!isAiConfigured()) throw new Error('AI 설정(AI_BASE_URL, AI_MODEL)이 비어 있어요');
   const scope = scopeKey({ level1, level2, level3 });
-  const { facts, statText, evidence } = buildSummaryInput({ ...scope, from, to });
+  const { facts, statText, evidence, structuredStats, dataWarnings } = buildSummaryInput({ ...scope, from, to });
   const started = Date.now();
-  const content = await chat([
+  const answer = await chat([
     { role: 'system', content: SYSTEM_PROMPT },
     { role: 'user', content: `[자료]\n${facts}\n\n위 자료로 동향 요약을 써 줘.` },
   ], { maxTokens: 8000, purpose: 'trend-summary', timeoutMs: 180_000 }); // 추론형 모델은 생각에도 토큰을 써서 2000이면 잘렸고 6000에서도 가끔 잘려 8000, 무료 모델은 1분을 넘기기도 한다
+  const grounded = groundInterpretations(answer, evidence, structuredStats);
+  let content = grounded.content;
   const checks = checkSummary(content, statText, evidence);
+  Object.assign(checks, checkStatistics(answer, structuredStats));
+  checks.evidenceWarnings = [...grounded.warnings, ...(evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [])];
+  checks.dataWarnings = dataWarnings;
+  const limitations = [
+    ...(dataWarnings.some((warning) => warning.includes(`기존 주의 기준 ${MIN_COUNT}건 미만`)) ? ['- 일부 회사·분야·연도의 출원 건수가 30건 미만이므로 동향 해석에 주의가 필요합니다. 30건은 기존 주의 기준이며 통계적 유의성을 뜻하지 않습니다.'] : []),
+    ...(structuredStats.values.length === 0 ? ['- 선택 범위·기간에 분류된 출원이 없어 동향 판단이 어렵습니다.'] : []),
+    ...(evidence.length < 4 ? [`- 근거 후보 특허가 ${evidence.length}건으로 부족할 수 있어 기술 동향 판단에 한계가 있습니다.`] : []),
+    '- 출원 건수는 출원번호 기준이며, 급증 용어는 유사 초록 중복 제거 후 문서 수를 기준으로 합니다.',
+  ];
+  if (/^##\s*한계[^\n]*$/m.test(content)) {
+    content = content.replace(/^##\s*한계[^\n]*$/m, (header) => `${header}\n${limitations.join('\n')}`);
+  } else {
+    content += `\n## 한계\n${limitations.join('\n')}`;
+  }
   const row = {
     ...scope,
     period_from: from,
