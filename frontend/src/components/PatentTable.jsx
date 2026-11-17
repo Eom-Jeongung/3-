@@ -33,7 +33,10 @@ const formatApplicant = (name) => {
 }
 
 // items는 지금까지 서버에서 받은 만큼만 들어 있고, total이 필터에 맞는 전체 건수다
-export default function PatentTable({ items, total, sort, onSortChange, onSelect, onLoadMore, onCollapse, loadingMore }) {
+const EXPORT_MAX = 20000 // 서버(routes/patents.js)의 CSV 상한과 같게
+
+// exportQuery: 지금 목록을 만든 필터·정렬. 주면 같은 조건으로 CSV를 내려받는 링크를 보여 준다
+export default function PatentTable({ items, total, sort, onSortChange, onSelect, onLoadMore, onCollapse, loadingMore, exportQuery }) {
   const wrapRef = useRef(null)
   const remaining = total - items.length
   const expanded = items.length > PAGE_SIZE
@@ -57,8 +60,13 @@ export default function PatentTable({ items, total, sort, onSortChange, onSelect
 
   return (
     <div className="table-wrap" ref={wrapRef}>
-      <p className="table-meta">
-        총 {total.toLocaleString('ko-KR')}건 중 {items.length.toLocaleString('ko-KR')}건 표시 · 행을 누르면 상세 보기
+      <p className="table-meta table-meta-row">
+        <span>총 {total.toLocaleString('ko-KR')}건 중 {items.length.toLocaleString('ko-KR')}건 표시 · 행을 누르면 상세 보기</span>
+        {exportQuery && (
+          <a className="more-link export-link" href={`/api/patents/export.csv?${new URLSearchParams(exportQuery)}`} download>
+            CSV 내려받기{total > EXPORT_MAX ? ` (앞 ${EXPORT_MAX.toLocaleString('ko-KR')}건)` : ` (${total.toLocaleString('ko-KR')}건)`}
+          </a>
+        )}
       </p>
       <table>
         <thead>

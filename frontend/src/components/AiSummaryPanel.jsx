@@ -45,6 +45,46 @@ function SummaryBody({ content, evidence, onOpen }) {
 
 const FIRST_YEAR = 2000 // 기간 목록의 첫해
 
+const toLocal = (sqliteUtc) => new Date(`${sqliteUtc.replace(' ', 'T')}Z`)
+const formatWhen = (sqliteUtc) => toLocal(sqliteUtc).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })
+
+// 복사·내려받기용 글: 요약 본문 + 만든 정보 + 근거 특허 + 검사 경고
+function summaryText(s, scopeName, issues) {
+  const lines = [
+    `# ${scopeName} AI 동향 요약 (${s.period_from}~${s.period_to}년 출원)`,
+    '',
+    `만든 때 ${formatWhen(s.created_at)} · 모델 ${s.model || '-'} · 분류 기준 ${s.criteria_version}${s.source === 'auto' ? ' · 분기 자동 생성' : ''}`,
+    '',
+    s.content.trim(),
+  ]
+  if (s.evidence?.length) {
+    lines.push('', '## 근거 후보 특허', ...s.evidence.map((e) => `- ${formatAppNo(e.number)} · ${e.title} · ${e.reason}`))
+  }
+  if (issues.length) lines.push('', '## 자동 검사 경고', ...issues.map(([k, label]) => `- ${label}: ${s.checks[k].join(' / ')}`))
+  lines.push('', '> AI가 DB 숫자와 근거 특허만 보고 쓴 초안입니다. "해석:" 문장은 추정이니 근거 특허로 확인해 주세요.')
+  return lines.join('\n')
+}
+
+// 클립보드 복사 (http 주소처럼 클립보드 API가 막힌 곳에서는 예전 방식으로)
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    const area = Object.assign(document.createElement('textarea'), { value: text })
+    document.body.append(area)
+    area.select()
+    document.execCommand('copy')
+    area.remove()
+  }
+}
+
+function downloadText(text, filename) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }))
+  const a = Object.assign(document.createElement('a'), { href: url, download: filename })
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // AI 동향 요약: 고른 범위(1·2·3차)와 기간의 저장된 요약을 보여 주고, 새로 만들 수 있다
 // 기간을 정하지 않으면 공개가 끝난 마지막 연도까지 최근 3개 연도 (서버가 정해 준다)
 export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOpenPatent }) {
@@ -53,12 +93,29 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [showFacts, setShowFacts] = useState(false)
+  const [archive, setArchive] = useState(null) // 보관함: 이 범위에서 만든 요약 목록
+  const [archiveTry, setArchiveTry] = useState(0) // 새로 만들면 올려서 목록을 다시 받는다
+  const [showArchive, setShowArchive] = useState(false)
+  const [viewing, setViewing] = useState(null) // 보관함에서 고른 지난 요약 (없으면 최신 요약)
+  const [copied, setCopied] = useState(false)
   const { level1 = '', level2 = '', level3 = '' } = scope
+  const scopeName = level3 || level2 || level1 || '전체 분야'
   const from = period?.from ?? state?.from
   const to = period?.to ?? state?.to
 
   useEffect(() => {
     let cancelled = false
+    const q = new URLSearchParams({ level1, level2, level3 })
+    fetch(`/api/summaries/archive?${q}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((body) => { if (!cancelled) setArchive(body.items) })
+      .catch(() => { if (!cancelled) setArchive(null) })
+    return () => { cancelled = true }
+  }, [level1, level2, level3, archiveTry])
+
+  useEffect(() => {
+    let cancelled = false
+    setViewing(null)
     setState((prev) => (prev ? { ...prev, summary: undefined } : null))
     setError(null)
     const q = new URLSearchParams({ level1, level2, level3, ...(period && { from: period.from, to: period.to }) })
@@ -92,7 +149,9 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error)
+      setViewing(null)
       setState((s) => ({ ...s, summary: body.summary }))
+      setArchiveTry((n) => n + 1)
     } catch (e) {
       setError(e.message)
     } finally {
@@ -100,7 +159,22 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
     }
   }
 
-  const s = state?.summary || null
+  // 보관함에서 고른 요약 불러오기 (최신 요약과 같은 것이면 그냥 최신으로)
+  async function openArchived(id) {
+    setError(null)
+    if (id === state?.summary?.id) { setViewing(null); return }
+    try {
+      const res = await fetch(`/api/summaries/${id}`)
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error)
+      setViewing(body.summary)
+      setShowFacts(false)
+    } catch (e) {
+      setError(`보관함 요약을 불러오지 못했어요: ${e.message}`)
+    }
+  }
+
+  const s = viewing ?? (state?.summary || null)
   const { issues, missing: olderChecks } = summaryCheckStatus(s?.checks)
   const stale = s && state.criteriaVersion && s.criteria_version !== state.criteriaVersion
 
@@ -120,18 +194,55 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
             </select>
           </div>
         )}
+        {archive?.length > 0 && (
+          <button className="more-btn more-btn-quiet" onClick={() => setShowArchive((v) => !v)} aria-expanded={showArchive}>
+            <span className="more-label">보관함 ({archive.length})</span>
+          </button>
+        )}
         {state?.aiReady && (
           <button className="more-btn" onClick={generate} disabled={busy}>
-            <span className="more-label">{busy ? '만드는 중… (30초~2분)' : s ? '다시 만들기' : 'AI 요약 만들기'}</span>
+            <span className="more-label">{busy ? '만드는 중… (30초~2분)' : state.summary ? '다시 만들기' : 'AI 요약 만들기'}</span>
           </button>
         )}
       </div>
+
+      {showArchive && archive?.length > 0 && (
+        <div className="summary-archive">
+          <p className="table-meta">이 분야에서 지금까지 만든 요약이에요. 다시 만들어도 예전 요약은 지워지지 않고 여기 남아요.</p>
+          <ul>
+            {archive.map((a) => {
+              const { issues, missing } = summaryCheckStatus(a.checks)
+              const current = s?.id === a.id
+              return (
+                <li key={a.id}>
+                  <button className={`archive-item ${current ? 'current' : ''}`} onClick={() => openArchived(a.id)} aria-current={current || undefined}>
+                    <b>{a.period_from}~{a.period_to}년</b>
+                    <span>{formatWhen(a.created_at)}</span>
+                    <span className="muted">{a.source === 'auto' ? '분기 자동' : '직접 만듦'} · {a.model || '-'}</span>
+                    <span className={issues.length || missing ? 'archive-warn' : 'archive-ok'}>
+                      {issues.length ? `검사 경고 ${issues.length}` : missing ? '이전 검사' : '검사 통과'}
+                    </span>
+                    {current && <span className="archive-now">보는 중</span>}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+
+      {viewing && (
+        <p className="archive-banner" role="status">
+          보관함에서 고른 <b>{viewing.period_from}~{viewing.period_to}년</b> 요약({formatWhen(viewing.created_at)})을 보고 있어요.
+          {' '}<button className="more-link" onClick={() => setViewing(null)}>최신 요약으로 돌아가기</button>
+        </p>
+      )}
 
       {error && <p className="error">{error}</p>}
       {!state && !error && <p className="placeholder-text">불러오는 중…</p>}
       {state && !state.aiReady && <p className="placeholder-text">AI 설정이 없어 요약을 만들 수 없어요 (backend/.env 의 AI_BASE_URL, AI_MODEL).</p>}
       {state && state.summary === undefined && !error && <p className="placeholder-text">불러오는 중…</p>}
-      {state && state.summary === null && state.aiReady && !busy && (
+      {state && state.summary === null && state.aiReady && !busy && !viewing && (
         <p className="placeholder-text">{from}~{to}년 요약은 아직 없어요. "AI 요약 만들기"를 누르면 1분 안팎으로 만들어져요.</p>
       )}
 
@@ -141,8 +252,22 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
             {s.source === 'auto' && <><b>분기 자동 생성</b> · </>}
             모델 {s.model || '-'} · 분류 기준 {s.criteria_version}
             {stale && <b className="warn-text"> (지금 기준 {state.criteriaVersion}과 달라요. 다시 만들기를 권해요)</b>}
-            {' '}· {new Date(`${s.created_at.replace(' ', 'T')}Z`).toLocaleString('ko-KR')}
+            {' '}· {formatWhen(s.created_at)}
           </p>
+          <div className="summary-actions">
+            <button
+              className="more-link"
+              onClick={async () => { await copyText(summaryText(s, scopeName, issues)); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+            >
+              {copied ? '복사했어요' : '요약 복사'}
+            </button>
+            <button
+              className="more-link"
+              onClick={() => downloadText(summaryText(s, scopeName, issues), `AI동향요약_${scopeName}_${s.period_from}-${s.period_to}_${toLocal(s.created_at).toISOString().slice(0, 10)}.md`)}
+            >
+              내려받기 (.md)
+            </button>
+          </div>
           {issues.length === 0 && !olderChecks
             ? <p className="check-ok">규칙 기반 자동 검사에서 경고를 발견하지 못했어요. 모든 수치와 해석의 정확성을 보장하지 않으니 근거를 확인해 주세요.</p>
             : (

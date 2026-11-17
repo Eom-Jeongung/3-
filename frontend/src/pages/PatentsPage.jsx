@@ -96,6 +96,7 @@ export default function PatentsPage({ refreshKey, search }) {
             onLoadMore={loadMore}
             onCollapse={collapse}
             loadingMore={loadingMore}
+            exportQuery={queryOf(filters, sort)}
           />
         )}
       </section>

@@ -296,3 +296,14 @@ export function latestSummary({ level1, level2, level3, from, to }) {
     ORDER BY id DESC LIMIT 1
   `).get({ ...s, from, to }));
 }
+
+/** 보관함: 한 범위(1·2·3차)에서 지금까지 만든 요약 목록 (기간 상관없이 최신순, 본문 제외) */
+export function listSummaries({ level1, level2, level3 }, limit = 100) {
+  const s = scopeKey({ level1, level2, level3 });
+  return db.prepare(`
+    SELECT id, created_at, period_from, period_to, model, source, criteria_version, checks
+    FROM trend_summaries
+    WHERE level1 = @level1 AND level2 = @level2 AND level3 = @level3
+    ORDER BY id DESC LIMIT @limit
+  `).all({ ...s, limit }).map((r) => ({ ...r, checks: JSON.parse(r.checks) }));
+}

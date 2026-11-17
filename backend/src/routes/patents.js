@@ -20,16 +20,15 @@ const CURRENT_CLASSIFICATION = `is_primary = 1 AND criteria_version = (SELECT MA
 
 const router = Router();
 
-// GET /api/patents?applicant_type=own|competitor&status=등록,공개&q=검색어&open_from=2025-01-01&open_to=2025-12-31
-//                  &level1=OLED&level2=설계&level3=화소 회로&sort=open_date&order=desc&limit=10&offset=0
-router.get('/', (req, res) => {
-  const { applicant_type, status, q, open_from, open_to, level1, level2, level3, sort = 'open_date', order = 'desc' } = req.query;
+/** 목록·CSV 내려받기가 같이 쓰는 필터와 정렬. 잘못된 값이면 { error } */
+function buildQuery(query) {
+  const { applicant_type, status, q, level1, level2, level3, sort = 'open_date', order = 'desc' } = query;
   const where = [];
   const params = {};
 
   if (applicant_type) {
     if (!['own', 'competitor', 'china'].includes(applicant_type)) {
-      return res.status(400).json({ error: 'applicant_type은 own, competitor, china 중 하나' });
+      return { error: 'applicant_type은 own, competitor, china 중 하나' };
     }
     where.push('applicant_type = @applicant_type');
     params.applicant_type = applicant_type;
@@ -45,9 +44,9 @@ router.get('/', (req, res) => {
     params.q = likePattern(q.trim());
   }
   for (const [name, op] of [['open_from', '>='], ['open_to', '<=']]) {
-    const value = req.query[name];
+    const value = query[name];
     if (!value) continue;
-    if (!DATE_RE.test(value)) return res.status(400).json({ error: `${name}은 YYYY-MM-DD 형식` });
+    if (!DATE_RE.test(value)) return { error: `${name}은 YYYY-MM-DD 형식` };
     where.push(`open_date ${op} @${name}`);
     params[name] = value;
   }
@@ -62,11 +61,9 @@ router.get('/', (req, res) => {
     for (const [k, v] of levels) params[k] = v;
   }
   if (!SORTABLE.includes(sort)) {
-    return res.status(400).json({ error: `sort는 ${SORTABLE.join(', ')} 중 하나` });
+    return { error: `sort는 ${SORTABLE.join(', ')} 중 하나` };
   }
   const dir = order === 'desc' ? 'DESC' : 'ASC';
-  const limit = Math.min(Math.max(Math.trunc(Number(req.query.limit)) || DEFAULT_LIMIT, 1), MAX_LIMIT);
-  const offset = Math.max(Math.trunc(Number(req.query.offset)) || 0, 0);
   const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
   // 날짜가 없는 건(공개 없이 등록 등)은 정렬 방향과 관계없이 맨 뒤로
@@ -74,6 +71,18 @@ router.get('/', (req, res) => {
   const orderBy = dir === 'DESC' || !NULLABLE_SORT.includes(sort)
     ? `${sort} ${dir}, id ${dir}`
     : `${sort} IS NULL, ${sort} ASC, id`;
+  return { whereSql, params, orderBy };
+}
+
+// GET /api/patents?applicant_type=own|competitor&status=등록,공개&q=검색어&open_from=2025-01-01&open_to=2025-12-31
+//                  &level1=OLED&level2=설계&level3=화소 회로&sort=open_date&order=desc&limit=10&offset=0
+router.get('/', (req, res) => {
+  const built = buildQuery(req.query);
+  if (built.error) return res.status(400).json({ error: built.error });
+  const { whereSql, params, orderBy } = built;
+  const { applicant_type } = req.query;
+  const limit = Math.min(Math.max(Math.trunc(Number(req.query.limit)) || DEFAULT_LIMIT, 1), MAX_LIMIT);
+  const offset = Math.max(Math.trunc(Number(req.query.offset)) || 0, 0);
   const items = db.prepare(`
     SELECT ${COLUMNS} FROM patents
     ${whereSql}
@@ -99,6 +108,40 @@ router.get('/', (req, res) => {
     total, // 필터에 맞는 전체 건수 (items는 그중 limit건)
     statuses, // 필터 UI에 쓸 상태값 목록
   });
+});
+
+// GET /api/patents/export.csv?(목록과 같은 필터·정렬) — 지금 고른 조건의 특허를 CSV로 내려받기
+// 엑셀에서 한글이 깨지지 않게 맨 앞에 BOM을 붙인다. 너무 큰 파일이 되지 않게 EXPORT_MAX건까지만
+const EXPORT_MAX = 20000;
+const TYPE_LABELS = { own: '자사(LG디스플레이)', competitor: '삼성디스플레이', china: '중국 4사' };
+const csvCell = (v) => {
+  const s = v == null ? '' : String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
+};
+const formatAppNo = (n) => (n?.length === 13 ? `${n.slice(0, 2)}-${n.slice(2, 6)}-${n.slice(6)}` : n);
+
+router.get('/export.csv', (req, res) => {
+  const built = buildQuery(req.query);
+  if (built.error) return res.status(400).json({ error: built.error });
+  const { whereSql, params, orderBy } = built;
+  const rows = db.prepare(`
+    SELECT application_number, title, applicant_name, applicant_type, application_date, open_date,
+           registration_date, register_number, legal_status, ipc_codes
+    FROM patents ${whereSql} ORDER BY ${orderBy} LIMIT ${EXPORT_MAX}
+  `).all(params);
+  const classificationOf = db.prepare(`SELECT level1, level2, level3, basis FROM classification WHERE application_number = ? AND ${CURRENT_CLASSIFICATION}`);
+  for (const r of rows) Object.assign(r, classificationOf.get(r.application_number));
+  const header = ['출원번호', '발명의 명칭', '출원인', '구분', '출원일', '공개일', '등록일', '등록번호', '상태', 'IPC', '1차 분류', '2차 분류', '3차 분류', '분류 근거'];
+  const lines = rows.map((r) => [
+    formatAppNo(r.application_number), r.title, r.applicant_name, TYPE_LABELS[r.applicant_type] ?? r.applicant_type,
+    r.application_date, r.open_date, r.registration_date, r.register_number, r.legal_status,
+    (r.ipc_codes ?? '').replaceAll('|', ' '), r.level1, r.level2, r.level3, r.basis,
+  ].map(csvCell).join(','));
+  const today = new Date().toISOString().slice(0, 10);
+  res.set('Content-Type', 'text/csv; charset=utf-8');
+  res.set('Content-Disposition', `attachment; filename="patents-${today}.csv"; filename*=UTF-8''${encodeURIComponent(`특허목록_${today}.csv`)}`);
+  res.set('X-Export-Count', String(rows.length));
+  res.send('﻿' + [header.join(','), ...lines].join('\r\n'));
 });
 
 // GET /api/patents/filter-options — 기술 분야 필터의 선택지

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
+import GuideDialog from './components/GuideDialog.jsx'
 import Icon from './components/Icon.jsx'
 import EmergingPage from './pages/EmergingPage.jsx'
 import FieldPage from './pages/FieldPage.jsx'
-import HomePage from './pages/HomePage.jsx'
+import HomePage, { httpMessage } from './pages/HomePage.jsx'
 import PatentsPage from './pages/PatentsPage.jsx'
 import SummaryPage from './pages/SummaryPage.jsx'
 
@@ -38,6 +39,8 @@ export default function App() {
   const [searchText, setSearchText] = useState('')
   const [search, setSearch] = useState(null) // 상단 검색 → 특허 목록 검색어로 넘긴다 ({ q, n }: 같은 말로 다시 찾아도 반영되게 n을 올린다)
   const [navOpen, setNavOpen] = useState(false) // 좁은 화면에서 사이드바 열기
+  const [guideOpen, setGuideOpen] = useState(false) // 1분 사용 안내
+  const closeGuide = useCallback(() => setGuideOpen(false), [])
 
   useEffect(() => {
     const onHashChange = () => {
@@ -51,12 +54,13 @@ export default function App() {
 
   const loadOverview = useCallback(async () => {
     try {
-      const res = await fetch('/api/trends/overview')
-      if (!res.ok) throw new Error((await res.json()).error)
-      setOverview(await res.json())
       setError(null)
+      const res = await fetch('/api/trends/overview')
+      // 서버가 꺼졌을 때는 JSON이 아닌 오류 화면이 오므로 상태 코드로 알려 준다
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? httpMessage(res.status))
+      setOverview(await res.json())
     } catch (err) {
-      setError(`트렌드를 불러오지 못했습니다: ${err.message}`)
+      setError(`트렌드를 불러오지 못했습니다: ${err.message === 'Failed to fetch' ? '서버에 연결할 수 없어요' : err.message}`)
     }
   }, [])
 
@@ -89,6 +93,10 @@ export default function App() {
           ))}
         </nav>
 
+        <button className="side-guide" onClick={() => { setGuideOpen(true); setNavOpen(false) }}>
+          <Icon name="docs" />
+          <span>1분 사용 안내</span>
+        </button>
         <div className="side-sync">
           <span className="side-sync-label">데이터 마지막 갱신</span>
           <strong>{formatDateTime(overview?.lastSyncedAt)}</strong>
@@ -101,12 +109,18 @@ export default function App() {
         </div>
       </aside>
       {navOpen && <div className="side-scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />}
+      {guideOpen && <GuideDialog onClose={closeGuide} />}
 
       <div className="shell-main">
         <header className="topbar">
           <button className="nav-toggle" onClick={() => setNavOpen((o) => !o)} aria-label="메뉴 열기" aria-expanded={navOpen}>
             <Icon name="menu" />
           </button>
+          {/* 좁은 화면에서는 사이드바가 숨으니 첫 화면에 제품 이름을 따로 보여 준다 */}
+          <a className="top-brand" href="#/">
+            <span className="side-avatar">LG</span>
+            <span>LG Display <b>특허 트렌드 센싱</b></span>
+          </a>
           <form className="top-search" role="search" onSubmit={handleSearch}>
             <Icon name="search" />
             <input
@@ -126,9 +140,10 @@ export default function App() {
         </header>
 
         <main>
-          {error && <p className="error page-error">{error}</p>}
+          {/* 대시보드는 카드마다 실패 안내를 따로 보여 주므로, 위쪽 오류 줄은 다른 화면에서만 */}
+          {error && route !== 'home' && <p className="error page-error">{error}</p>}
           {/* 메뉴를 오가도 모아보기의 필터·펼친 목록이 유지되도록 화면을 지우지 않고 숨긴다 */}
-          <div hidden={route !== 'home'}><HomePage overview={overview} /></div>
+          <div hidden={route !== 'home'}><HomePage overview={overview} overviewError={error} onRetryOverview={loadOverview} /></div>
           {route === 'field' && <FieldPage key={hash} scope={scopeOf(hash)} />}
           {route === 'summary' && <SummaryPage scope={scopeOf(hash)} />}
           {route === 'emerging' && <EmergingPage scope={scopeOf(hash)} />}

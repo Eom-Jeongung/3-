@@ -66,6 +66,7 @@ export default function FieldPage({ scope, refreshKey }) {
               onLoadMore={loadMore}
               onCollapse={collapse}
               loadingMore={loadingMore}
+              exportQuery={params}
             />
           )}
         </section>

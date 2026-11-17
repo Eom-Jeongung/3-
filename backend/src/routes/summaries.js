@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateTrendSummary, latestSummary, lastCompleteYear } from '../trendSummary.js';
+import { generateTrendSummary, latestSummary, lastCompleteYear, listSummaries, getSummaryById } from '../trendSummary.js';
 import { isAiConfigured } from '../ai.js';
 import { CRITERIA_VERSION } from '../classification.js';
 
@@ -29,6 +29,20 @@ router.get('/', (req, res) => {
     to: scope.to,
     running: running.has(JSON.stringify(scope)),
   });
+});
+
+// GET /api/summaries/archive?level1=&level2=&level3= → 보관함: 이 범위에서 만든 요약 목록 (기간 상관없이 최신순)
+router.get('/archive', (req, res) => {
+  const pick = (k) => (typeof req.query[k] === 'string' ? req.query[k].trim() : '');
+  res.json({ items: listSummaries({ level1: pick('level1'), level2: pick('level2'), level3: pick('level3') }) });
+});
+
+// GET /api/summaries/:id → 보관함에서 고른 요약 하나
+router.get('/:id', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: '요약 번호가 올바르지 않아요' });
+  const summary = getSummaryById(Number(req.params.id));
+  if (!summary) return res.status(404).json({ error: '그 요약을 찾을 수 없어요' });
+  res.json({ summary });
 });
 
 // POST /api/summaries { level1, level2, level3, from, to } → AI로 새로 만든다 (수십 초 걸릴 수 있음)

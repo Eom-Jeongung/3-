@@ -32,6 +32,21 @@ const fieldLink = (level2, level3) => {
 }
 const sumGroups = (bySeries, i) => Object.values(bySeries).reduce((s, arr) => s + arr[i], 0)
 
+// 서버 오류 코드를 읽기 쉬운 말로 (502~504는 서버가 꺼졌거나 다시 켜지는 중)
+export const httpMessage = (status) => (status >= 502 && status <= 504
+  ? `서버가 응답하지 않아요. 잠시 뒤 다시 시도해 주세요. (${status})`
+  : `서버에서 오류가 났어요. (${status})`)
+
+// 카드 자리에 띄우는 불러오기 실패 안내 + 다시 시도
+function LoadFail({ what, message, onRetry }) {
+  return (
+    <div className="load-fail" role="alert">
+      <p><b>{what} 불러오기에 실패했어요.</b> {message}</p>
+      {onRetry && <button type="button" className="more-link" onClick={onRetry}>다시 시도</button>}
+    </div>
+  )
+}
+
 function Delta({ value }) {
   if (value === null) return null
   return (
@@ -89,19 +104,29 @@ function CompanyPanel({ series, fields, minCount }) {
   )
 }
 
-export default function HomePage({ overview, refreshKey }) {
+export default function HomePage({ overview, overviewError, onRetryOverview, refreshKey }) {
   const [series, setSeries] = useState(null)
+  const [seriesError, setSeriesError] = useState(null)
+  const [seriesTry, setSeriesTry] = useState(0) // "다시 시도"를 누르면 올려서 다시 받는다
   const [showAllMovers, setShowAllMovers] = useState(false)
   const [showFieldTable, setShowFieldTable] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     fetch('/api/trends/series?years=5&unit=year')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((body) => { if (!cancelled) setSeries(body) })
-      .catch(() => { if (!cancelled) setSeries(null) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(httpMessage(r.status)))))
+      .then((body) => { if (!cancelled) { setSeries(body); setSeriesError(null) } })
+      .catch((e) => { if (!cancelled) setSeriesError(e.message === 'Failed to fetch' ? '서버에 연결할 수 없어요.' : e.message) })
     return () => { cancelled = true }
-  }, [refreshKey])
+  }, [refreshKey, seriesTry])
+
+  const retrySeries = () => { setSeriesError(null); setSeriesTry((n) => n + 1) }
+  // 공개 동향(overview)은 앱 전체가 받는다. 실패하면 App의 오류 문구를 그대로 보여 준다
+  const overviewFail = !overview && overviewError
+    ? <LoadFail what="최근 공개 동향" message={overviewError.replace(/^트렌드를 불러오지 못했습니다: /, '')} onRetry={onRetryOverview} />
+    : null
+  const seriesFail = !series && seriesError ? <LoadFail what="연간 출원 추이" message={seriesError} onRetry={retrySeries} /> : null
+  const loading = <p className="placeholder-text">불러오는 중…</p>
 
   const windows = overview?.windows ?? []
   const [latest, prev, prev2] = windows
@@ -169,7 +194,7 @@ export default function HomePage({ overview, refreshKey }) {
             </div>
           </article>
         ))}
-        {!latest && <p className="placeholder-text">불러오는 중…</p>}
+        {!latest && (overviewFail ?? loading)}
       </section>
       {latest && <p className="footnote kpi-note">공개일 기준 {formatRange(latest)} · 증감은 바로 앞 12개월({formatRange(prev)})과 비교 · 작은 선은 2년 전 → 최근</p>}
 
@@ -184,7 +209,7 @@ export default function HomePage({ overview, refreshKey }) {
               {lines.map((l) => <li key={l.key}><i className={`dot tone-${l.tone}`} />{l.label}</li>)}
             </ul>
           </div>
-          {series ? <DashLineChart periods={series.periods} lines={lines} /> : <p className="placeholder-text">그래프를 불러오는 중…</p>}
+          {series ? <DashLineChart periods={series.periods} lines={lines} /> : (seriesFail ?? <p className="placeholder-text">그래프를 불러오는 중…</p>)}
           {lastDone && beforeDone && (
             <p className="dash-foot">
               <Icon name="trend" />
@@ -217,7 +242,7 @@ export default function HomePage({ overview, refreshKey }) {
                 ))}
               </ul>
             </div>
-          ) : <p className="placeholder-text">불러오는 중…</p>}
+          ) : (seriesFail ?? loading)}
           {sliceTotal > 0 && <p className="dash-note">OLED가 전체 출원의 <b>{oledShare}%</b>를 차지합니다.</p>}
         </section>
       </div>
@@ -230,6 +255,8 @@ export default function HomePage({ overview, refreshKey }) {
             </h2>
           </div>
           <p className="dash-sub">최근 12개월과 1년 전 비교 · 1년 전 {minCount}건 이상인 기술만</p>
+          {!overview && (overviewFail ?? loading)}
+          {overview && allMovers.length === 0 && <p className="placeholder-text">최근 12개월에 눈에 띄게 늘어난 세부 기술이 없어요.</p>}
           <ul className="issue-list">
             {shownMovers.map((m) => (
               <li key={`${m.company.key}${m.level2}${m.level3}`}>
@@ -255,6 +282,7 @@ export default function HomePage({ overview, refreshKey }) {
             <h2 id="insight-title" className="dash-title">기술 분야별 AI 인사이트</h2>
           </div>
           <p className="dash-sub">분야를 누르면 자사·경쟁사를 비교한 AI 동향 요약으로 이동해요.</p>
+          {!overview && (overviewFail ?? loading)}
           <div className="insight-grid">
             {fields.map((f) => (
               <a key={f.level2} className="insight-item" href={`#/summary?level2=${encodeURIComponent(f.level2)}`}>

@@ -671,3 +671,76 @@ tbody tr:last-child td { border-bottom: 0; }
 .chip-tone { display: inline-flex; align-items: center; gap: 6px; }
 .chip-tone:not(.active) { opacity: 0.6; }
 .chip-tone.active .dot { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8); }
+
+/* ---- 불러오기 실패 안내 (카드 자리) ---- */
+.load-fail { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; padding: 12px 14px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); font-size: 13px; }
+.load-fail p { margin: 0; }
+.load-fail .more-link { color: var(--warn); font-weight: 600; }
+.kpi-grid > .load-fail, .kpi-grid > .placeholder-text { grid-column: 1 / -1; }
+
+/* ---- AI 요약 보관함·복사·내려받기 ---- */
+.summary-archive { margin: 4px 0 14px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 12px; background: var(--surface); }
+.summary-archive ul { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow-y: auto; }
+.summary-archive li + li { border-top: 1px solid var(--hairline); }
+.archive-item {
+  display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; width: 100%; padding: 9px 6px;
+  border: 0; border-radius: 8px; background: none; text-align: left; font-size: 13px; color: var(--text);
+}
+.archive-item:hover { background: var(--hover); }
+.archive-item.current { background: var(--accent-soft); }
+.archive-item b { min-width: 92px; }
+.archive-ok { color: var(--ok); font-weight: 600; }
+.archive-warn { color: var(--warn); font-weight: 600; }
+.archive-now { margin-left: auto; font-size: 11px; font-weight: 700; color: var(--accent); }
+.archive-banner { margin: 0 0 12px; padding: 9px 12px; border-radius: 10px; background: var(--accent-soft); font-size: 13px; }
+.summary-actions { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 10px; }
+.summary-actions .more-link { font-size: 13px; font-weight: 600; }
+.table-meta-row { display: flex; justify-content: space-between; align-items: center; gap: 6px 16px; flex-wrap: wrap; }
+.export-link { font-weight: 600; text-decoration: none; }
+.export-link:hover { text-decoration: underline; }
+
+/* ---- 1분 사용 안내 ---- */
+.side-guide {
+  display: flex; align-items: center; gap: 10px; margin-top: auto; padding: 11px 14px; border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px; background: transparent; color: #fff; font-size: 14px; font-weight: 600; text-align: left;
+  transition: background 0.15s;
+}
+.side-guide:hover { background: rgba(255, 255, 255, 0.1); }
+.side-guide .icon { width: 18px; height: 18px; }
+.side-guide + .side-sync { margin-top: 8px; }
+.guide-backdrop { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--scrim); }
+.guide {
+  position: relative; width: min(640px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 28px 28px 22px;
+  background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-pop);
+}
+.guide h2 { margin: 0 40px 6px 0; font-size: 22px; font-weight: 800; letter-spacing: -0.03em; }
+.guide-lead { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+.guide-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.guide-steps li { display: flex; gap: 12px; align-items: flex-start; }
+.guide-steps a { color: var(--text); text-decoration: none; font-size: 15px; }
+.guide-steps a:hover { color: var(--accent); text-decoration: underline; }
+.guide-steps p { margin: 2px 0 0; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.guide-icon { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); }
+.guide-icon .icon { width: 18px; height: 18px; }
+.guide-notes { margin: 18px 0 0; padding: 12px 14px 12px 30px; border-radius: 10px; background: var(--surface-tint); font-size: 12px; line-height: 1.6; color: var(--muted); }
+
+/* ---- 좁은 화면: 위쪽 바에 제품 이름 ---- */
+.top-brand { display: none; align-items: center; gap: 8px; flex: none; color: var(--text); text-decoration: none; font-size: 13px; white-space: nowrap; }
+.top-brand .side-avatar { width: 30px; height: 30px; font-size: 11px; color: #fff; }
+@media (max-width: 960px) {
+  .top-brand { display: flex; }
+}
+@media (max-width: 600px) {
+  .topbar { flex-wrap: wrap; row-gap: 10px; }
+  .top-search { flex-basis: 100%; order: 3; height: 42px; }
+}
+@media (max-width: 600px) {
+  /* 특허 목록 위 숫자 카드: 세로로 길게 쌓지 않고 한 줄에 셋 */
+  .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .stat { padding: 12px 10px; }
+  .stat-label { font-size: 12px; }
+  .stat-value { font-size: 20px; }
+  .stat-value small { font-size: 12px; margin-left: 2px; }
+  .guide { padding: 22px 18px 18px; }
+  .drawer { padding: 24px 18px 36px; border-radius: 0; }
+}
