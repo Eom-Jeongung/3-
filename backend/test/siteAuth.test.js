@@ -5,8 +5,8 @@ import { siteAuth } from '../src/siteAuth.js';
 const PASSWORD = 'correct-password';
 const basic = (password) => `Basic ${Buffer.from(`user:${password}`).toString('base64')}`;
 
-function call(guard, { password, forwardedFor = '203.0.113.1' } = {}) {
-  const headers = { 'x-forwarded-for': forwardedFor };
+function call(guard, { password, realIp = '203.0.113.1', forwardedFor = '10.0.0.1' } = {}) {
+  const headers = { 'x-real-ip': realIp, 'x-forwarded-for': forwardedFor };
   if (password !== undefined) headers.authorization = basic(password);
   const result = { status: null, headers: {}, passed: false };
   const res = {
@@ -55,10 +55,10 @@ test('맞는 비밀번호를 넣으면 실패 횟수가 지워진다', () => {
   }
 });
 
-test('X-Forwarded-For 앞부분을 꾸며도 잠금을 피할 수 없고, 다른 접속자는 막지 않는다', () => {
+test('중간 서버 주소가 연결마다 바뀌어도 실제 접속 주소로 잠그고, 다른 접속자는 막지 않는다', () => {
   const { guard } = guardWithClock();
-  for (let i = 0; i < 3; i++) call(guard, { password: 'wrong', forwardedFor: `10.0.0.${i}, 203.0.113.1` });
+  for (let i = 0; i < 3; i++) call(guard, { password: 'wrong', forwardedFor: `10.0.0.${i}` });
 
-  assert.equal(call(guard, { password: PASSWORD, forwardedFor: '10.9.9.9, 203.0.113.1' }).status, 429);
-  assert.equal(call(guard, { password: PASSWORD, forwardedFor: '203.0.113.2' }).passed, true);
+  assert.equal(call(guard, { password: PASSWORD, forwardedFor: '10.9.9.9' }).status, 429);
+  assert.equal(call(guard, { password: PASSWORD, realIp: '203.0.113.2', forwardedFor: '10.0.0.1' }).passed, true);
 });

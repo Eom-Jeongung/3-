@@ -15,8 +15,9 @@ const sameText = (a, b) => {
   return x.length === y.length && crypto.timingSafeEqual(x, y);
 };
 
-// 배포 서비스의 프록시는 실제 접속 주소를 X-Forwarded-For 맨 뒤에 붙인다. 앞쪽 값은 접속자가 꾸밀 수 있어 쓰지 않는다
-const clientAddress = (req) => (req.headers['x-forwarded-for'] ?? '').split(',').pop().trim() || req.socket?.remoteAddress || 'unknown';
+// Railway는 실제 접속 주소를 X-Real-IP로 알려 준다
+// X-Forwarded-For 맨 뒤 값은 연결마다 바뀌는 중간 서버 주소라서, 기준으로 쓰면 다른 사용자까지 함께 막힌다
+const clientAddress = (req) => req.headers['x-real-ip']?.trim() || req.socket?.remoteAddress || 'unknown';
 
 export function siteAuth(password, { maxFailures = MAX_FAILURES, lockMs = LOCK_MS, now = Date.now } = {}) {
   if (!password) return (req, res, next) => next();
