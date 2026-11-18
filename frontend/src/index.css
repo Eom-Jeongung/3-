@@ -784,7 +784,13 @@ tbody tr:last-child td { border-bottom: 0; }
 .term-patent .type-tag { flex: none; font-size: 12px; }
 .term-patent-date { flex: none; font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; }
 .term-patent-title { min-width: 0; }
-.term-patents .more-link { margin-top: 6px; font-size: 14px; font-weight: 700; }
+/* "특허 N건 모두 보기" / "접기": 글자만 있던 링크보다 조금 크게, 누르기 쉬운 버튼으로 */
+.term-patents-toggle {
+  margin-top: 8px; padding: 7px 14px; border: 1px solid var(--accent); border-radius: 9px;
+  background: var(--surface); color: var(--accent); font-size: 15px; font-weight: 700;
+  transition: background 0.15s, color 0.15s;
+}
+.term-patents-toggle:hover { background: var(--accent); color: #fff; }
 .term-more { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 18px 0 6px; }
 .term-more .more-label { font-size: 15px; }
 @media (max-width: 1100px) {

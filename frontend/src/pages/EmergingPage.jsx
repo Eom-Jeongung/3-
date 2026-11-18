@@ -60,7 +60,7 @@ function TermList({ rows, onOpen, showPast = false }) {
                   ))}
                 </ul>
                 {r.patents.length > PREVIEW && (
-                  <button className="more-link" onClick={() => toggle(r.term)} aria-expanded={expanded}>
+                  <button className="term-patents-toggle" onClick={() => toggle(r.term)} aria-expanded={expanded}>
                     {expanded ? '접기' : `특허 ${r.patents.length}건 모두 보기`}
                   </button>
                 )}
@@ -73,7 +73,7 @@ function TermList({ rows, onOpen, showPast = false }) {
         <div className="term-more">
           {rows.length > shown && (
             <button className="more-btn" onClick={() => setShown((n) => n + PAGE)}>
-              <span className="more-label">{Math.min(PAGE, rows.length - shown)}개 더 보기</span>
+              <span className="more-label">더보기</span>
               <span className="more-arrow">↓</span>
             </button>
           )}
