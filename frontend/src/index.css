@@ -575,15 +575,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .period-picker { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .ai-summary-head h3 { margin-right: 8px; }
 .explorer-link { margin-left: auto; font-size: 14px; }
-.emerging-example { display: block; font-family: inherit; text-align: left; margin: 2px 0; text-decoration: none; }
-.emerging-example:hover { text-decoration: underline; }
 .emerging-subtitle { margin: 20px 0 8px; font-size: 16px; }
 .emerging-subtitle .muted { font-weight: 400; margin-left: 6px; }
-.term-toggle { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted; margin-right: 6px; }
-.term-toggle:hover { color: var(--accent); }
-.emerging-table tbody th, .emerging-table tbody td { vertical-align: top; }
-.emerging-table tbody th { width: 30%; min-width: 160px; white-space: normal; }
-.emerging-table tbody th .muted { white-space: normal; }
 .patent-summary-body h4 { margin: 12px 0 4px; font-size: 13px; color: var(--muted); }
 .patent-summary-body p { margin: 0 0 4px; line-height: 1.6; }
 .patent-summary .more-btn { margin-bottom: 8px; }
@@ -760,25 +753,48 @@ tbody tr:last-child td { border-bottom: 0; }
 .flag-foreign .flag-badge { background: var(--muted); color: #fff; }
 @media (prefers-color-scheme: dark) { .flag-badge { color: #111 !important; } }
 
-/* ---- 신기술 탐지: 글자를 키워 읽기 쉽게 ---- */
-.emerging-card .table-meta { font-size: 14px; line-height: 1.6; }
-.emerging-card .emerging-subtitle { margin: 26px 0 10px; font-size: 19px; font-weight: 800; }
-.emerging-card .emerging-subtitle .muted { font-size: 14px; font-weight: 500; color: var(--muted); }
-.emerging-card .footnote { font-size: 13px; line-height: 1.7; color: var(--muted); }
-.emerging-table th, .emerging-table td { padding-top: 14px; padding-bottom: 14px; }
-.emerging-table thead th { font-size: 13px; font-weight: 700; color: var(--muted); }
-.emerging-table tbody th { font-size: 16px; }
-.emerging-table .term-toggle { font-size: 16px; font-weight: 700; }
-.emerging-table tbody th .muted { margin-top: 4px; font-size: 13px; color: var(--muted); }
-.emerging-table td.num { font-size: 15px; }
-.emerging-table .emerging-example { font-size: 14px; line-height: 1.6; padding: 2px 0; color: var(--text); text-decoration: none; }
-.emerging-table .emerging-example:hover { color: var(--accent); text-decoration: underline; }
-.emerging-table .emerging-example .muted { font-size: 13px; color: var(--faint); }
-.emerging-table .type-tag { font-size: 12px; margin-left: 4px; }
-.emerging-table .more-link { margin-top: 4px; font-size: 14px; font-weight: 600; }
+/* ---- 신기술 탐지: 용어마다 카드 한 장, 큰 글자, 5개씩 더 보기 ---- */
+.emerging-card .table-meta { font-size: 15px; line-height: 1.7; }
+.emerging-card .emerging-subtitle { margin: 30px 0 12px; font-size: 21px; font-weight: 800; letter-spacing: -0.03em; }
+.emerging-card .emerging-subtitle .muted { display: block; margin: 4px 0 0; font-size: 15px; font-weight: 500; color: var(--muted); }
+.emerging-card .footnote { font-size: 14px; line-height: 1.75; color: var(--muted); }
+.term-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.term-card {
+  display: grid; grid-template-columns: minmax(200px, 1fr) minmax(240px, auto) minmax(0, 2fr); gap: 14px 28px; align-items: start;
+  padding: 20px 22px; border: 1px solid var(--hairline); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-card);
+}
+.term-main { display: flex; gap: 12px; align-items: flex-start; }
+.term-rank { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 14px; font-weight: 800; }
+.term-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0 0; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.3; word-break: keep-all; }
+.term-name .type-tag { font-size: 12px; }
+.term-related { margin: 6px 0 0; font-size: 14px; color: var(--muted); line-height: 1.5; }
+.term-stats { display: flex; gap: 10px 22px; flex-wrap: wrap; margin: 0; }
+.term-stats div { min-width: 70px; }
+.term-stats dt { font-size: 13px; color: var(--muted); }
+.term-stats dd { margin: 2px 0 0; font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.term-stats dd b { font-size: 22px; font-weight: 800; }
+.term-stats .term-up { font-size: 17px; color: var(--accent); }
+.term-patents-title { margin: 0 0 6px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.term-patents ul { list-style: none; margin: 0; padding: 0; }
+.term-patent {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 6px 4px; border: 0; border-radius: 8px;
+  background: none; color: var(--text); font-size: 15px; line-height: 1.5; text-align: left;
+}
+.term-patent:hover { background: var(--hover); color: var(--accent); }
+.term-patent .type-tag { flex: none; font-size: 12px; }
+.term-patent-date { flex: none; font-size: 13px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.term-patent-title { min-width: 0; }
+.term-patents .more-link { margin-top: 6px; font-size: 14px; font-weight: 700; }
+.term-more { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin: 18px 0 6px; }
+.term-more .more-label { font-size: 15px; }
+@media (max-width: 1100px) {
+  .term-card { grid-template-columns: minmax(0, 1fr) auto; }
+  .term-patents { grid-column: 1 / -1; }
+}
 @media (max-width: 600px) {
-  .emerging-table tbody th, .emerging-table .term-toggle { font-size: 15px; }
-  .emerging-table .emerging-example { font-size: 13.5px; }
+  .term-card { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+  .term-name { font-size: 18px; }
+  .term-patent { font-size: 14px; flex-wrap: wrap; }
 }
 
 /* ---- AI 요약: 검사 경고 접기, 자료 참고(회색) ---- */

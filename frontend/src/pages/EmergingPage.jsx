@@ -13,56 +13,79 @@ const MONTH_OPTIONS = [12, 24, 36]
 const formatDate = (iso) => (iso ? iso.replaceAll('-', '.') : '-')
 const pct = (n) => `${n < 0.1 ? n.toFixed(2) : n.toFixed(1)}%`
 
-const PREVIEW = 3 // 처음에 보여 줄 특허 수. 용어나 "더 보기"를 누르면 전부(최대 30건)
+const PREVIEW = 3 // 카드마다 처음에 보여 줄 특허 수. "모두 보기"를 누르면 전부(최대 30건)
+const PAGE = 5 // 처음에 보여 줄 용어 수. "더 보기"를 누를 때마다 5개씩 늘어난다
 
-// 용어 표. 용어를 누르면 그 용어가 나온 최근 특허 목록이 펼쳐진다
-function TermTable({ rows, onOpen, showPast = false }) {
+// 용어 목록: 용어마다 카드 한 장 (용어 · 건수 · 비중 변화 · 그 용어가 나온 최근 특허)
+// 한 화면에 다 띄우지 않고 5개씩 끊어 본다. 조건이 바뀌면 부모가 key를 바꿔 처음(5개)부터 다시 보여 준다
+function TermList({ rows, onOpen, showPast = false }) {
+  const [shown, setShown] = useState(PAGE)
   const [open, setOpen] = useState(() => new Set())
   const toggle = (term) => setOpen((s) => { const n = new Set(s); if (n.has(term)) n.delete(term); else n.add(term); return n })
+  const visible = rows.slice(0, shown)
   return (
-    <div className="table-wrap">
-      <table className="field-table emerging-table">
-        <thead>
-          <tr>
-            <th scope="col">용어</th>
-            <th scope="col" className="num">최근 건수</th>
-            {showPast && <th scope="col" className="num">이전 건수</th>}
-            {showPast && <th scope="col" className="num">비중 변화</th>}
-            <th scope="col">이 용어가 나온 최근 특허</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const expanded = open.has(r.term)
-            const list = expanded ? r.patents : r.patents.slice(0, PREVIEW)
-            return (
-              <tr key={r.term}>
-                <th scope="row">
-                  <button className="term-toggle" onClick={() => toggle(r.term)} aria-expanded={expanded}>{r.term}</button>
-                  {showPast && r.isNew && <span className="type-tag own">새로 등장</span>}
-                  {r.related.length > 0 && <div className="muted">비슷한 말: {r.related.slice(0, 3).join(', ')}</div>}
-                </th>
-                <td className="num">{r.recentDocs}</td>
-                {showPast && <td className="num">{r.pastDocs}</td>}
-                {showPast && <td className="num">{pct(r.pastPct)} → <b>{pct(r.recentPct)}</b></td>}
-                <td>
+    <>
+      <ol className="term-list">
+        {visible.map((r, i) => {
+          const expanded = open.has(r.term)
+          const list = expanded ? r.patents : r.patents.slice(0, PREVIEW)
+          return (
+            <li key={r.term} className="term-card">
+              <div className="term-main">
+                <span className="term-rank">{i + 1}</span>
+                <div>
+                  <h4 className="term-name">
+                    {r.term}
+                    {showPast && r.isNew && <span className="type-tag own">새로 등장</span>}
+                  </h4>
+                  {r.related.length > 0 && <p className="term-related">비슷한 말: {r.related.slice(0, 3).join(', ')}</p>}
+                </div>
+              </div>
+              <dl className="term-stats">
+                <div><dt>최근</dt><dd><b>{r.recentDocs.toLocaleString('ko-KR')}</b>건</dd></div>
+                {showPast && <div><dt>이전</dt><dd>{r.pastDocs.toLocaleString('ko-KR')}건</dd></div>}
+                {showPast && <div><dt>비중 변화</dt><dd>{pct(r.pastPct)} → <b className="term-up">{pct(r.recentPct)}</b></dd></div>}
+              </dl>
+              <div className="term-patents">
+                <p className="term-patents-title">이 용어가 나온 최근 특허</p>
+                <ul>
                   {list.map((x) => (
-                    <button key={x.id} className="appno-link emerging-example" onClick={() => onOpen(x.id)} title={x.applicationNumber}>
-                      <span className="muted">{COMPANY_SHORT[x.type]} · {formatDate(x.date)}</span> {x.title}
-                    </button>
+                    <li key={x.id}>
+                      <button className="term-patent" onClick={() => onOpen(x.id)} title={x.applicationNumber}>
+                        <span className={`type-tag ${x.type}`}>{COMPANY_SHORT[x.type]}</span>
+                        <span className="term-patent-date">{formatDate(x.date)}</span>
+                        <span className="term-patent-title">{x.title}</span>
+                      </button>
+                    </li>
                   ))}
-                  {r.patents.length > PREVIEW && (
-                    <button className="more-link" onClick={() => toggle(r.term)} aria-expanded={expanded}>
-                      {expanded ? '접기' : `특허 ${r.patents.length}건 모두 보기`}
-                    </button>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
+                </ul>
+                {r.patents.length > PREVIEW && (
+                  <button className="more-link" onClick={() => toggle(r.term)} aria-expanded={expanded}>
+                    {expanded ? '접기' : `특허 ${r.patents.length}건 모두 보기`}
+                  </button>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+      {(rows.length > shown || shown > PAGE) && (
+        <div className="term-more">
+          {rows.length > shown && (
+            <button className="more-btn" onClick={() => setShown((n) => n + PAGE)}>
+              <span className="more-label">{Math.min(PAGE, rows.length - shown)}개 더 보기</span>
+              <span className="more-arrow">↓</span>
+            </button>
+          )}
+          {shown > PAGE && (
+            <button className="more-btn more-btn-quiet" onClick={() => setShown(PAGE)}>
+              <span className="more-label">접기</span>
+            </button>
+          )}
+          <span className="more-hint">{Math.min(shown, rows.length)} / {rows.length}개</span>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -127,7 +150,7 @@ export default function EmergingPage({ scope, refreshKey }) {
               <h3 className="emerging-subtitle">급증 기술 <span className="muted">예전보다 눈에 띄게 많이 나온 용어 ({data.rows.length}개)</span></h3>
               {data.rows.length === 0
                 ? <p className="placeholder-text">눈에 띄게 늘어난 용어가 없어요. 분야를 넓히거나 기간을 바꿔 보세요.</p>
-                : <TermTable rows={data.rows} onOpen={setSelectedId} showPast />}
+                : <TermList key={`rows|${company}|${months}|${level1}|${level2}|${level3}`} rows={data.rows} onOpen={setSelectedId} showPast />}
               <p className="footnote">
                 한 특허에 여러 번 나와도 1건으로 세요. 최근 기간에 5건 이상 나오고, 늘어난 정도가 우연으로 보기 어려운(0.1% 수준) 용어만 보여줘요.
                 전체 특허의 8% 넘게 나오는 흔한 말은 뺐고, 같은 뜻의 다른 표기(마이크로 발광 다이오드 → 마이크로LED 등)는 하나로 셌어요.
@@ -137,7 +160,7 @@ export default function EmergingPage({ scope, refreshKey }) {
               <h3 className="emerging-subtitle">초기 신호 <span className="muted">예전엔 한 건도 없다가 최근 3건 이상 나온 새 용어 ({data.early.length}개)</span></h3>
               {data.early.length === 0
                 ? <p className="placeholder-text">새로 나타난 용어가 없어요.</p>
-                : <TermTable rows={data.early} onOpen={setSelectedId} />}
+                : <TermList key={`early|${company}|${months}|${level1}|${level2}|${level3}`} rows={data.early} onOpen={setSelectedId} />}
               <p className="footnote">
                 건수가 적어 우연일 수 있는 참고용 목록이에요. 막 나타나기 시작한 기술일 수 있으니 특허를 눌러 내용을 확인해 주세요.
                 같은 발명을 나눠 낸 출원만으로 생긴 말을 거르려고, 명칭이 다른 특허 2건 이상에 나온 용어만 보여줘요.
