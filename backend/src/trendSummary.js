@@ -244,6 +244,10 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
   if (!isAiConfigured()) throw new Error('AI 설정(AI_BASE_URL, AI_MODEL)이 비어 있어요');
   const scope = scopeKey({ level1, level2, level3 });
   const { facts, statText, evidence, structuredStats, dataWarnings } = buildSummaryInput({ ...scope, from, to });
+  // 고른 범위·기간에 분류된 특허가 없으면 AI를 부르지 않는다 (비용을 쓰고 의미 없는 요약이 저장되는 것을 막는다)
+  if (structuredStats.values.length === 0) {
+    throw Object.assign(new Error('선택한 범위와 기간에 분류된 특허가 없어 요약을 만들 수 없어요'), { status: 422 });
+  }
   const started = Date.now();
   const answer = await chat([
     { role: 'system', content: SYSTEM_PROMPT },
@@ -258,7 +262,6 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
   checks.dataWarnings = dataWarnings;
   const limitations = [
     ...(dataWarnings.some((warning) => warning.includes(`기존 주의 기준 ${MIN_COUNT}건 미만`)) ? ['- 일부 회사·분야·연도의 출원 건수가 30건 미만이므로 동향 해석에 주의가 필요합니다. 30건은 기존 주의 기준이며 통계적 유의성을 뜻하지 않습니다.'] : []),
-    ...(structuredStats.values.length === 0 ? ['- 선택 범위·기간에 분류된 출원이 없어 동향 판단이 어렵습니다.'] : []),
     ...(evidence.length < 4 ? [`- 근거 후보 특허가 ${evidence.length}건으로 부족할 수 있어 기술 동향 판단에 한계가 있습니다.`] : []),
     '- 출원 건수는 출원번호 기준이며, 급증 용어는 유사 초록 중복 제거 후 문서 수를 기준으로 합니다.',
   ];

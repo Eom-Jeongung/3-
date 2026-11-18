@@ -231,6 +231,30 @@ test('버전 불일치 시 AI 요청과 요약 저장 전에 생성을 중단한
   }
 });
 
+test('선택한 범위에 분류된 특허가 없으면 AI를 부르지 않고 저장도 하지 않는다', async () => {
+  const originalFetch = globalThis.fetch;
+  const oldBase = process.env.AI_BASE_URL;
+  const oldModel = process.env.AI_MODEL;
+  let called = false;
+  process.env.AI_BASE_URL = 'https://example.invalid';
+  process.env.AI_MODEL = 'test';
+  globalThis.fetch = () => { called = true; throw new Error('unexpected AI request'); };
+  const before = db.prepare('SELECT COUNT(*) n FROM trend_summaries').get().n;
+  try {
+    await assert.rejects(generateTrendSummary({ ...scope, level3: '존재하지 않는 기술' }), (error) => {
+      assert.equal(error.status, 422);
+      assert.match(error.message, /분류된 특허가 없어/);
+      return true;
+    });
+    assert.equal(called, false);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM trend_summaries').get().n, before);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (oldBase === undefined) delete process.env.AI_BASE_URL; else process.env.AI_BASE_URL = oldBase;
+    if (oldModel === undefined) delete process.env.AI_MODEL; else process.env.AI_MODEL = oldModel;
+  }
+});
+
 test('요약 생성 시 구조화 통계를 전달하고 수치 불일치 검사를 저장한다', async () => {
   const originalFetch = globalThis.fetch;
   const oldBase = process.env.AI_BASE_URL;
