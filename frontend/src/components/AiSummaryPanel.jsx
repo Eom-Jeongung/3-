@@ -22,6 +22,13 @@ function Inline({ text, evidence, onOpen }) {
   })
 }
 
+// 서버 검사가 줄 앞에 붙인 표시 (backend/src/summaryEvidence.js FLAGS와 같게)
+const LINE_FLAGS = { '숫자 다름': 'flag-mismatch', '확인 필요': 'flag-check', '다른 언어': 'flag-foreign' }
+function splitFlag(text) {
+  const m = text.match(/^\[(숫자 다름|확인 필요|다른 언어)\]\s*/)
+  return m ? { flag: m[1], rest: text.slice(m[0].length) } : { flag: null, rest: text }
+}
+
 // AI 답(마크다운 일부: ## 제목, - 목록, **굵게**)을 화면 요소로
 function SummaryBody({ content, evidence, onOpen }) {
   const blocks = []
@@ -34,9 +41,15 @@ function SummaryBody({ content, evidence, onOpen }) {
       blocks.push(<h4 key={blocks.length}>{line.replace(/^#+\s*/, '')}</h4>)
     } else if (/^[-*]\s+/.test(line)) {
       if (!list) { list = []; blocks.push(<ul key={blocks.length}>{list}</ul>) }
-      const text = line.replace(/^[-*]\s+/, '')
-      // "- 해석: …" 줄도 추정 문장이라 표시를 다르게 한다
-      list.push(<li key={list.length} className={/^\**해석/.test(text) ? 'ai-interpretation' : undefined}><Inline text={text} evidence={evidence} onOpen={onOpen} /></li>)
+      const { flag, rest: text } = splitFlag(line.replace(/^[-*]\s+/, ''))
+      // "- 해석: …" 줄도 추정 문장이라 표시를 다르게 한다. 검사 표시가 붙은 줄은 색으로 구분한다
+      const cls = [/^\**해석/.test(text) && 'ai-interpretation', flag && `line-flag ${LINE_FLAGS[flag]}`].filter(Boolean).join(' ')
+      list.push(
+        <li key={list.length} className={cls || undefined}>
+          {flag && <span className="flag-badge" title="자동 검사 표시: 아래 검사 결과와 근거를 확인해 주세요">{flag}</span>}
+          <Inline text={text} evidence={evidence} onOpen={onOpen} />
+        </li>,
+      )
     } else {
       list = null
       const isNote = /^\**해석/.test(line)

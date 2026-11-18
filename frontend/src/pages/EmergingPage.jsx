@@ -98,7 +98,7 @@ export default function EmergingPage({ scope, refreshKey }) {
         <p className="period">최근 공개된 특허에서 예전보다 눈에 띄게 많이 나온 용어를 찾아요. 새로 뜨는 기술의 신호로 볼 수 있어요.</p>
       </header>
       <div className="page-body">
-        <section className="card" aria-labelledby="emerging-title">
+        <section className="card emerging-card" aria-labelledby="emerging-title">
           <h2 id="emerging-title" className="card-title">{label} 급증 용어</h2>
           <div className="trend-controls">
             <FieldPicker scope={scope} onChange={(s) => { window.location.hash = scopeHref('emerging', s) }} />

@@ -748,3 +748,35 @@ tbody tr:last-child td { border-bottom: 0; }
 .archive-head .table-meta { flex: 1 1 260px; margin: 0; }
 .archive-scope { flex: none; min-width: 120px; padding: 2px 8px; border-radius: 6px; background: var(--fill); font-size: 12px; font-weight: 700; color: var(--text); }
 .archive-scope.here { background: var(--accent-soft); color: var(--accent); }
+
+/* ---- AI 요약: 자동 검사 표시가 붙은 줄 ---- */
+.ai-summary-body li.line-flag { padding: 4px 8px; border-radius: 8px; list-style-position: inside; }
+.flag-badge { display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 700; vertical-align: 1px; }
+.flag-check { background: var(--pending-soft); }
+.flag-check .flag-badge { background: var(--pending); color: #fff; }
+.flag-mismatch { background: var(--warn-soft); }
+.flag-mismatch .flag-badge { background: var(--warn); color: #fff; }
+.flag-foreign { background: var(--fill); }
+.flag-foreign .flag-badge { background: var(--muted); color: #fff; }
+@media (prefers-color-scheme: dark) { .flag-badge { color: #111 !important; } }
+
+/* ---- 신기술 탐지: 글자를 키워 읽기 쉽게 ---- */
+.emerging-card .table-meta { font-size: 14px; line-height: 1.6; }
+.emerging-card .emerging-subtitle { margin: 26px 0 10px; font-size: 19px; font-weight: 800; }
+.emerging-card .emerging-subtitle .muted { font-size: 14px; font-weight: 500; color: var(--muted); }
+.emerging-card .footnote { font-size: 13px; line-height: 1.7; color: var(--muted); }
+.emerging-table th, .emerging-table td { padding-top: 14px; padding-bottom: 14px; }
+.emerging-table thead th { font-size: 13px; font-weight: 700; color: var(--muted); }
+.emerging-table tbody th { font-size: 16px; }
+.emerging-table .term-toggle { font-size: 16px; font-weight: 700; }
+.emerging-table tbody th .muted { margin-top: 4px; font-size: 13px; color: var(--muted); }
+.emerging-table td.num { font-size: 15px; }
+.emerging-table .emerging-example { font-size: 14px; line-height: 1.6; padding: 2px 0; color: var(--text); text-decoration: none; }
+.emerging-table .emerging-example:hover { color: var(--accent); text-decoration: underline; }
+.emerging-table .emerging-example .muted { font-size: 13px; color: var(--faint); }
+.emerging-table .type-tag { font-size: 12px; margin-left: 4px; }
+.emerging-table .more-link { margin-top: 4px; font-size: 14px; font-weight: 600; }
+@media (max-width: 600px) {
+  .emerging-table tbody th, .emerging-table .term-toggle { font-size: 15px; }
+  .emerging-table .emerging-example { font-size: 13.5px; }
+}
