@@ -780,3 +780,11 @@ tbody tr:last-child td { border-bottom: 0; }
   .emerging-table tbody th, .emerging-table .term-toggle { font-size: 15px; }
   .emerging-table .emerging-example { font-size: 13.5px; }
 }
+
+/* ---- AI 요약: 검사 경고 접기, 자료 참고(회색) ---- */
+.check-warn details summary { cursor: pointer; }
+.check-items { margin: 6px 0 4px; padding-left: 18px; font-size: 12px; color: var(--text); }
+.check-items li { margin-bottom: 4px; line-height: 1.5; }
+.check-note { margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; background: var(--fill); color: var(--muted); font-size: 13px; }
+.check-note summary { cursor: pointer; }
+.check-note ul { margin: 6px 0 2px; padding-left: 18px; font-size: 12px; }

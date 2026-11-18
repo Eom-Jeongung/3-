@@ -73,6 +73,11 @@ test('앞 문장에서 회사를 이어받은 숫자가 다르면 틀렸다고 �
   assert.equal(r.statUnverified.length, 1);
 });
 
+test('연도를 하나도 적지 않은 증감률은 첫해 대비 마지막 해 값으로 대조한다', () => {
+  assert.deepEqual(checkStatistics(`- 자사 ${field} 출원이 50% 증가한 반면 삼성 ${other}는 100% 증가`, stats), { statMismatches: [], statUnverified: [] });
+  assert.equal(checkStatistics(`- 자사 ${field} 출원이 30% 증가`, stats).statMismatches.length, 1);
+});
+
 test('기준 숫자(30건 미만)와 중국 4사는 대조 대상이 아니다', () => {
   assert.deepEqual(checkStatistics('- 중국 4사는 연간 30건 미만이라 추세를 단정하지 않는다', stats), { statMismatches: [], statUnverified: [] });
 });

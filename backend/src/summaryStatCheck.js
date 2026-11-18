@@ -85,7 +85,9 @@ export function checkStatistics(answer, stats) {
     const lineYears = [...line.matchAll(/(\d{4})\s*년/g)].map((m) => Number(m[1]));
     // 증감률은 자료에서 늘 첫해 대비 마지막 해 값이다. "증가율·증가폭"이라고 쓴 줄도 그 값으로 본다
     const lineIsChange = /증가율|증가폭|감소율|감소폭|증감률/.test(line) && !/비중|점유율/.test(line);
-    const changeAllowed = lineIsChange || /\d\s*건?\s*(?:→|->)\s*(?:\d{4}\s*년\s*)?\d/.test(line) || (lineYears.includes(stats.from) && lineYears.includes(stats.to));
+    // 연도를 하나도 적지 않은 "자사 출원이 31% 증가" 같은 줄도 자료의 증감률(첫해 대비 마지막 해)로 본다.
+    // 연도를 하나만 적은 "2022년 50% 증가"처럼 기간이 어긋날 수 있는 줄만 확인 불가로 남긴다
+    const changeAllowed = lineIsChange || lineYears.length === 0 || /\d\s*건?\s*(?:→|->)\s*(?:\d{4}\s*년\s*)?\d/.test(line) || (lineYears.includes(stats.from) && lineYears.includes(stats.to));
     const marks = mentionsIn(line, stats);
     const lineCompanies = new Set(marks.filter((m) => m.type === 'company').map((m) => m.value));
     const lineFields = new Set(marks.filter((m) => m.type === 'field').map((m) => m.value));

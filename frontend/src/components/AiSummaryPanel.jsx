@@ -209,7 +209,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
   const hereCount = archive ? archive.filter(isHere).length : 0
 
   const s = viewing ?? (state?.summary || null)
-  const { issues, missing: olderChecks } = summaryCheckStatus(s?.checks)
+  const { issues, notes, missing: olderChecks } = summaryCheckStatus(s?.checks)
   // 보관함 요약은 화면 기본 정보(state)보다 먼저 도착할 수 있어 state가 없을 수도 있다
   const stale = s && state?.criteriaVersion && s.criteria_version !== state.criteriaVersion
 
@@ -317,10 +317,27 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
               <div className="check-warn" role="status">
                 <b>자동 검사에서 확인이 필요한 부분이 있어요</b>
                 {olderChecks && <p>이전에 생성된 요약이라 새 통계·근거 검사가 적용되지 않았어요. 다시 만들면 검사할 수 있어요.</p>}
-                {issues.length > 0 && <ul>{issues.map(([k, label]) => <li key={k}>{label}: {s.checks[k].join(' / ')}</li>)}</ul>}
+                {issues.length > 0 && (
+                  <ul>
+                    {issues.map(([k, label]) => (
+                      <li key={k}>
+                        <details>
+                          <summary>{label} <b>{s.checks[k].length}건</b></summary>
+                          <ul className="check-items">{s.checks[k].map((x, i) => <li key={i}>{x}</li>)}</ul>
+                        </details>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <p>자동 검사는 모든 오류를 찾지 못할 수 있으니 자료와 근거 특허를 확인해 주세요.</p>
               </div>
             )}
+          {notes.length > 0 && (
+            <details className="check-note">
+              <summary>참고: {notes.map(([k, label]) => `${label} ${s.checks[k].length}곳`).join(', ')} (요약 오류가 아니라 데이터가 적다는 안내예요)</summary>
+              <ul>{notes.flatMap(([k]) => s.checks[k].map((x, i) => <li key={`${k}${i}`}>{x}</li>))}</ul>
+            </details>
+          )}
           <div className="ai-summary-body">
             <SummaryBody content={s.content} evidence={s.evidence} onOpen={onOpenPatent} />
           </div>

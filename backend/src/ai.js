@@ -8,6 +8,8 @@ const config = () => ({
   baseUrl: (process.env.AI_BASE_URL ?? '').trim().replace(/\/+$/, ''),
   apiKey: (process.env.AI_API_KEY ?? '').trim(), // 사내 서버는 키 없이 쓸 수도 있다
   model: (process.env.AI_MODEL ?? '').trim(),
+  // 적었을 때만 보낸다. 모델마다 받는지가 달라서 (예: Claude Haiku 5.5는 temperature를 받지 않음)
+  temperature: (process.env.AI_TEMPERATURE ?? '').trim(),
 });
 
 export function isAiConfigured() {
@@ -38,8 +40,9 @@ function logCall(row) {
  * @returns {Promise<string>} 모델이 돌려준 글
  */
 export async function chat(messages, { maxTokens = 800, purpose = 'etc', timeoutMs = TIMEOUT_MS } = {}) {
-  const { baseUrl, apiKey, model } = config();
+  const { baseUrl, apiKey, model, temperature } = config();
   if (!baseUrl || !model) throw new Error('AI 설정(AI_BASE_URL, AI_MODEL)이 비어 있습니다');
+  const sampling = temperature !== '' && Number.isFinite(Number(temperature)) ? { temperature: Number(temperature) } : {};
 
   const started = Date.now();
   let usage;
@@ -48,10 +51,14 @@ export async function chat(messages, { maxTokens = 800, purpose = 'etc', timeout
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(apiKey && { Authorization: `Bearer ${apiKey}` }) },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature: 0 }),
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, ...sampling }),
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!res.ok) throw new Error(`AI 서버 응답 오류 (HTTP ${res.status})`);
+    if (!res.ok) {
+      // AI 서버가 알려 준 이유도 남긴다 (예: 키 사용 한도 초과). 키 값은 들어 있지 않다
+      const reason = await res.json().then((b) => b?.error?.message).catch(() => null);
+      throw new Error(`AI 서버 응답 오류 (HTTP ${res.status})${reason ? `: ${String(reason).slice(0, 160)}` : ''}`);
+    }
 
     const body = await res.json();
     usage = body.usage;

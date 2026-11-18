@@ -48,14 +48,15 @@ export function groundInterpretations(content, evidence, stats) {
       const fields = stats.fields.filter((f) => f !== '전체' && stat.includes(f));
       const companyMatches = item && ({ own: /자사|LG/i, competitor: /삼성|(?<!중국\s)경쟁사/, china: /중국|BOE|CSOT|Tianma|Visionox/i }[item.companyKey]?.test(stat));
       const fieldMatches = item && (stats.fields.length === 1 && stats.fields[0] === '전체' || fields.length === 1 && fields[0] === item.field);
-      const canonical = stat.match(/^(자사|LG디스플레이|삼성|삼성디스플레이|중국|중국 4사)\s+(.+?)\s+(\d{4})년\s+([\d,]+)건$/);
+      // 통계 부분은 "자사 분야 2022년 100건 → 2024년 166건(66% 증가)"처럼 비교로 써도 숫자가 모두 맞으면 된다
+      const hasClaim = /\d\s*(?:건|%)|\d\s*(?:→|->)\s*\d/.test(stat);
       const source = item ? `${item.title} ${item.abstract}` : '';
       const quoted = quote.trim();
       const group = stats.fields.length === 1 && stats.fields[0] === '전체' ? '전체' : item?.field;
       const samples = stats.values.filter((v) => v.company === item?.companyKey && v.field === group && v.metric === 'count');
       const tooSmall = stats.minimumSample != null && (!samples.length || samples.some((v) => v.value < stats.minimumSample));
       if (verify.statMismatches.length) { warnings.push(`해석의 통계가 자료와 다름: ${body}`); return mark('mismatch', body); }
-      if (item && canonical && canonical[2] === item.field && companyMatches && fieldMatches && !tooSmall
+      if (item && hasClaim && companyMatches && fieldMatches && !tooSmall
         && !verify.statUnverified.length && quoted.length >= 6 && source.includes(quoted) && !foreign) {
         return `- 해석: ${stat} · 특허(${number}) 원문: 「${quoted}」`;
       }

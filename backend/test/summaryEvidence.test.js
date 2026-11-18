@@ -30,6 +30,14 @@ test('없는 원문·다른 회사·없는 특허·근거 없는 해석은 원�
   assert.match(groundInterpretations(`- 해석: 자사 ${field} 2022년 40건 | 1020240147664 | 「터치 센서 전극을 포함하는」`, different, stats).content, /^- \[확인 필요\] 해석:/);
 });
 
+test('해석의 통계가 비교 문장이어도 숫자가 모두 맞고 원문 인용이 맞으면 확인된 해석으로 정리한다', () => {
+  const two = { ...stats, values: [...stats.values, { company: 'own', field, year: 2020, metric: 'count', value: 35 }] };
+  const line = `- 해석: 자사 ${field} 2020년 35건 → 2022년 40건 | 1020240147664 | 「터치 센서 전극을 포함하는」`;
+  const result = groundInterpretations(line, evidence, two);
+  assert.match(result.content, /^- 해석: 자사 터치·센서 2020년 35건 → 2022년 40건 · 특허\(1020240147664\)/);
+  assert.deepEqual(result.warnings, []);
+});
+
 test('해석의 통계 숫자가 자료와 다르면 숫자 다름으로 표시한다', () => {
   const result = groundInterpretations(`- 해석: 자사 ${field} 2022년 41건 | 1020240147664 | 「터치 센서 전극을 포함하는」`, evidence, stats);
   assert.match(result.content, /^- \[숫자 다름\] 해석: 자사 터치·센서 2022년 41건/);
