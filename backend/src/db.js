@@ -10,7 +10,7 @@ export const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
-// 필드명은 KIPRIS getAdvancedSearch 실제 응답(docs/kipris-sample.xml) 기준으로 맞춤
+// 필드명은 KIPRIS getAdvancedSearch 실제 응답 기준으로 맞춤
 // 날짜는 KIPRIS의 YYYYMMDD를 YYYY-MM-DD로 변환해 저장
 export function initSchema() {
   db.exec(`
@@ -120,11 +120,9 @@ export const likePattern = (s) => `%${s.replace(/[\\%_]/g, '\\$&')}%`;
 
 // 이미 만들어진 DB에 나중에 추가한 컬럼 (CREATE TABLE IF NOT EXISTS는 기존 테이블을 바꾸지 않음)
 function migrate() {
-  const cols = db.prepare('PRAGMA table_info(patents)').all().map((c) => c.name);
-  if (!cols.includes('big_drawing_url')) db.exec('ALTER TABLE patents ADD COLUMN big_drawing_url TEXT');
-  const classificationCols = db.prepare('PRAGMA table_info(classification)').all().map((c) => c.name);
-  if (!classificationCols.includes('basis_detail')) db.exec('ALTER TABLE classification ADD COLUMN basis_detail TEXT');
   const colsOf = (table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!colsOf('patents').includes('big_drawing_url')) db.exec('ALTER TABLE patents ADD COLUMN big_drawing_url TEXT');
+  if (!colsOf('classification').includes('basis_detail')) db.exec('ALTER TABLE classification ADD COLUMN basis_detail TEXT');
   if (!colsOf('ipc_map').includes('level3')) db.exec('ALTER TABLE ipc_map ADD COLUMN level3 TEXT');
   if (!colsOf('keyword_map').includes('requires')) db.exec('ALTER TABLE keyword_map ADD COLUMN requires TEXT');
   allowChinaType();

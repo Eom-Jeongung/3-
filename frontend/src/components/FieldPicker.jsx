@@ -1,20 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
+import { jsonOrThrow } from '../format.js'
 
 const ALL = ''
-const HIDDEN = ['미분류'] // 고를 필요가 없는 분류
-let cache = null // 분류 목록은 화면마다 다시 받지 않는다
+const HIDDEN_LEVELS = ['미분류'] // 고를 필요가 없는 분류
+let classificationCache = null // 분류 목록은 화면마다 다시 받지 않는다
 
 // 방식(1차) → 기술 분야(2차) → 세부 기술(3차) 선택 칸. 분야 분석·AI 동향 요약·신기술 탐지가 함께 쓴다
 // scope = { level1, level2, level3 }, onChange(새 scope)
 export default function FieldPicker({ scope, onChange }) {
-  const [options, setOptions] = useState(cache ?? []) // [{ level1, level2, level3, n }]
+  const [options, setOptions] = useState(classificationCache ?? []) // [{ level1, level2, level3, n }]
   const { level1 = ALL, level2 = ALL, level3 = ALL } = scope
 
   useEffect(() => {
-    if (cache) return
+    if (classificationCache) return
     fetch('/api/patents/filter-options')
-      .then((r) => r.json())
-      .then((body) => { cache = body.classification ?? []; setOptions(cache) })
+      .then(jsonOrThrow)
+      .then((body) => { classificationCache = body.classification ?? []; setOptions(classificationCache) })
       .catch(() => setOptions([]))
   }, [])
 
@@ -22,12 +23,12 @@ export default function FieldPicker({ scope, onChange }) {
   const choices = useMemo(() => {
     const count = (rows, key) => {
       const m = new Map()
-      for (const r of rows) if (r[key] && !HIDDEN.includes(r[key])) m.set(r[key], (m.get(r[key]) ?? 0) + r.n)
+      for (const r of rows) if (r[key] && !HIDDEN_LEVELS.includes(r[key])) m.set(r[key], (m.get(r[key]) ?? 0) + r.n)
       return [...m].sort((a, b) => b[1] - a[1]).map(([name]) => name)
     }
-    const in1 = options.filter((r) => !level1 || r.level1 === level1)
-    const in2 = in1.filter((r) => !level2 || r.level2 === level2)
-    return { level1: count(options, 'level1'), level2: count(in1, 'level2'), level3: level2 ? count(in2, 'level3') : [] }
+    const inLevel1 = options.filter((r) => !level1 || r.level1 === level1)
+    const inLevel2 = inLevel1.filter((r) => !level2 || r.level2 === level2)
+    return { level1: count(options, 'level1'), level2: count(inLevel1, 'level2'), level3: level2 ? count(inLevel2, 'level3') : [] }
   }, [options, level1, level2])
 
   const select = (title, value, list, set, allLabel) => (

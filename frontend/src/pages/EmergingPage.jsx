@@ -1,25 +1,20 @@
 import { useEffect, useState } from 'react'
 import FieldPicker, { scopeHref, scopeLabel } from '../components/FieldPicker.jsx'
 import PatentDetail from '../components/PatentDetail.jsx'
+import { COMPANY_OPTIONS, jsonOrThrow } from '../format.js'
 
-const COMPANY_OPTIONS = [
-  { value: '', label: '전체' },
-  { value: 'own', label: '자사' },
-  { value: 'competitor', label: '삼성' },
-  { value: 'china', label: '중국 4사' },
-]
 const COMPANY_SHORT = { own: '자사', competitor: '삼성', china: '중국' }
 const MONTH_OPTIONS = [12, 24, 36]
 const formatDate = (iso) => (iso ? iso.replaceAll('-', '.') : '-')
-const pct = (n) => `${n < 0.1 ? n.toFixed(2) : n.toFixed(1)}%`
+const formatShare = (n) => `${n < 0.1 ? n.toFixed(2) : n.toFixed(1)}%`
 
-const PREVIEW = 3 // 카드마다 처음에 보여 줄 특허 수. "모두 보기"를 누르면 전부(최대 30건)
-const PAGE = 5 // 처음에 보여 줄 용어 수. "더 보기"를 누를 때마다 5개씩 늘어난다
+const PATENT_PREVIEW = 3 // 카드마다 처음에 보여 줄 특허 수. "모두 보기"를 누르면 전부(최대 30건)
+const TERMS_PER_PAGE = 5 // 처음에 보여 줄 용어 수. "더 보기"를 누를 때마다 5개씩 늘어난다
 
 // 용어 목록: 용어마다 카드 한 장 (용어 · 건수 · 비중 변화 · 그 용어가 나온 최근 특허)
 // 한 화면에 다 띄우지 않고 5개씩 끊어 본다. 조건이 바뀌면 부모가 key를 바꿔 처음(5개)부터 다시 보여 준다
 function TermList({ rows, onOpen, showPast = false }) {
-  const [shown, setShown] = useState(PAGE)
+  const [shown, setShown] = useState(TERMS_PER_PAGE)
   const [open, setOpen] = useState(() => new Set())
   const toggle = (term) => setOpen((s) => { const n = new Set(s); if (n.has(term)) n.delete(term); else n.add(term); return n })
   const visible = rows.slice(0, shown)
@@ -28,7 +23,7 @@ function TermList({ rows, onOpen, showPast = false }) {
       <ol className="term-list">
         {visible.map((r, i) => {
           const expanded = open.has(r.term)
-          const list = expanded ? r.patents : r.patents.slice(0, PREVIEW)
+          const list = expanded ? r.patents : r.patents.slice(0, PATENT_PREVIEW)
           return (
             <li key={r.term} className="term-card">
               <div className="term-main">
@@ -44,7 +39,7 @@ function TermList({ rows, onOpen, showPast = false }) {
               <dl className="term-stats">
                 <div><dt>최근</dt><dd><b>{r.recentDocs.toLocaleString('ko-KR')}</b>건</dd></div>
                 {showPast && <div><dt>이전</dt><dd>{r.pastDocs.toLocaleString('ko-KR')}건</dd></div>}
-                {showPast && <div><dt>비중 변화</dt><dd>{pct(r.pastPct)} → <b className="term-up">{pct(r.recentPct)}</b></dd></div>}
+                {showPast && <div><dt>비중 변화</dt><dd>{formatShare(r.pastPct)} → <b className="term-up">{formatShare(r.recentPct)}</b></dd></div>}
               </dl>
               <div className="term-patents">
                 <p className="term-patents-title">이 용어가 나온 최근 특허</p>
@@ -59,7 +54,7 @@ function TermList({ rows, onOpen, showPast = false }) {
                     </li>
                   ))}
                 </ul>
-                {r.patents.length > PREVIEW && (
+                {r.patents.length > PATENT_PREVIEW && (
                   <button className="term-patents-toggle" onClick={() => toggle(r.term)} aria-expanded={expanded}>
                     {expanded ? '접기' : `특허 ${r.patents.length}건 모두 보기`}
                   </button>
@@ -69,16 +64,16 @@ function TermList({ rows, onOpen, showPast = false }) {
           )
         })}
       </ol>
-      {(rows.length > shown || shown > PAGE) && (
+      {(rows.length > shown || shown > TERMS_PER_PAGE) && (
         <div className="term-more">
           {rows.length > shown && (
-            <button className="more-btn" onClick={() => setShown((n) => n + PAGE)}>
+            <button className="more-btn" onClick={() => setShown((n) => n + TERMS_PER_PAGE)}>
               <span className="more-label">더보기</span>
               <span className="more-arrow">↓</span>
             </button>
           )}
-          {shown > PAGE && (
-            <button className="more-btn more-btn-quiet" onClick={() => setShown(PAGE)}>
+          {shown > TERMS_PER_PAGE && (
+            <button className="more-btn more-btn-quiet" onClick={() => setShown(TERMS_PER_PAGE)}>
               <span className="more-label">접기</span>
             </button>
           )}
@@ -90,7 +85,7 @@ function TermList({ rows, onOpen, showPast = false }) {
 }
 
 // 신기술 탐지: 최근 공개된 특허에서 예전보다 눈에 띄게 많이 나온 용어 (AI 없이 계산)
-export default function EmergingPage({ scope, refreshKey }) {
+export default function EmergingPage({ scope }) {
   const [company, setCompany] = useState('')
   const [months, setMonths] = useState(24)
   const [data, setData] = useState(null)
@@ -107,12 +102,12 @@ export default function EmergingPage({ scope, refreshKey }) {
     for (const [k, v] of Object.entries({ level1, level2, level3 })) if (v) q.set(k, v)
     setLoading(true)
     fetch(`/api/trends/emerging?${q}`)
-      .then((r) => (r.ok ? r.json() : r.json().then((b) => Promise.reject(new Error(b.error ?? `HTTP ${r.status}`)))))
+      .then(jsonOrThrow)
       .then((body) => { if (!cancelled) { setData(body); setError(null) } })
       .catch((e) => { if (!cancelled) setError(e.message) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [company, months, level1, level2, level3, refreshKey])
+  }, [company, months, level1, level2, level3])
 
   return (
     <>

@@ -1,9 +1,6 @@
 import { useEffect, useState } from 'react'
 import PatentSummary from './PatentSummary.jsx'
-
-const TYPE_LABELS = { own: '자사', competitor: '경쟁사', china: '중국 경쟁사' }
-
-const formatAppNo = (n) => (n?.length === 13 ? `${n.slice(0, 2)}-${n.slice(2, 6)}-${n.slice(6)}` : n)
+import { APPLICANT_TYPE_LABELS, formatAppNo, jsonOrThrow } from '../format.js'
 
 // 상세 패널: 목록에서 행을 누르면 오른쪽에서 열린다 (GET /api/patents/:id)
 export default function PatentDetail({ id, onClose }) {
@@ -29,7 +26,7 @@ export default function PatentDetail({ id, onClose }) {
     setClaimsError(null)
     setCopied(false)
     fetch(`/api/patents/${id}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(jsonOrThrow)
       .then(setPatent)
       .catch((e) => setError(e.message))
   }, [id])
@@ -49,9 +46,7 @@ export default function PatentDetail({ id, onClose }) {
     setClaimsLoading(true)
     setClaimsError(null)
     try {
-      const res = await fetch(`/api/patents/${id}/claims`, { method: 'POST' })
-      const body = await res.json()
-      if (!res.ok) throw new Error(body.error)
+      const body = await jsonOrThrow(await fetch(`/api/patents/${id}/claims`, { method: 'POST' }))
       setFetchedClaims(body.claims)
     } catch (e) {
       setClaimsError(e.message)
@@ -90,7 +85,7 @@ export default function PatentDetail({ id, onClose }) {
         {patent && (
           <>
             <div className="drawer-tags">
-              <span className={`type-tag ${patent.applicant_type}`}>{TYPE_LABELS[patent.applicant_type]}</span>
+              <span className={`type-tag ${patent.applicant_type}`}>{APPLICANT_TYPE_LABELS[patent.applicant_type]}</span>
               <span className={`status ${patent.legal_status === '등록' ? 'status-registered' : patent.legal_status === '공개' ? 'status-pending' : 'status-dead'}`}>
                 {patent.legal_status}
               </span>

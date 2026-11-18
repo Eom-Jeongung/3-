@@ -1,7 +1,6 @@
 import { useRef } from 'react'
 import { PAGE_SIZE } from '../hooks/usePatentList.js'
-
-const TYPE_LABELS = { own: '자사', competitor: '경쟁사', china: '중국 경쟁사' }
+import { APPLICANT_TYPE_LABELS, formatAppNo } from '../format.js'
 
 const COLUMNS = [
   { key: 'application_number', label: '출원번호' },
@@ -22,9 +21,6 @@ const formatIpc = (codes) => {
 }
 
 const STATUS_CLASS = { 등록: 'status-registered', 공개: 'status-pending' }
-
-// 1020230116992 -> 10-2023-0116992
-const formatAppNo = (n) => (n?.length === 13 ? `${n.slice(0, 2)}-${n.slice(2, 6)}-${n.slice(6)}` : n)
 
 // 공동출원은 'A|B'로 오므로 첫 출원인 + "외 N"으로 표시
 const formatApplicant = (name) => {
@@ -97,7 +93,7 @@ export default function PatentTable({ items, total, sort, onSortChange, onSelect
               <td className="mono">{formatAppNo(p.application_number)}</td>
               <td className="title-cell" title={p.title}>{p.title}</td>
               <td>
-                <span className={`type-tag ${p.applicant_type}`}>{TYPE_LABELS[p.applicant_type]}</span>
+                <span className={`type-tag ${p.applicant_type}`}>{APPLICANT_TYPE_LABELS[p.applicant_type]}</span>
                 <span className="applicant" title={p.applicant_name.replaceAll('|', ', ')}>{formatApplicant(p.applicant_name)}</span>
               </td>
               <td className="mono">{p.application_date ?? '-'}</td>

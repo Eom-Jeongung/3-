@@ -22,7 +22,7 @@ router.get('/series', (req, res) => {
   res.json(getSeries({ years, unit, company, level1, level2, level3 }));
 });
 
-const pickRow = ({ term, recentDocs, pastDocs, recentPct, pastPct, growth, isNew, related, patents }) =>
+const toEmergingRow = ({ term, recentDocs, pastDocs, recentPct, pastPct, growth, isNew, related, patents }) =>
   ({ term, recentDocs, pastDocs, recentPct, pastPct, growth, isNew, related, patents });
 
 // GET /api/trends/emerging?company=own|competitor|china&level1=&level2=&level3=&months=24
@@ -35,8 +35,8 @@ router.get('/emerging', (req, res) => {
   const r = burstTerms({ applicant: company || 'all', level1, level2, level3, recentMonths: months });
   res.json({
     ref: r.ref, recentStart: r.recentStart, pastStart: r.pastStart, recent: r.recent, past: r.past,
-    rows: r.rows.map(pickRow),
-    early: (r.early ?? []).map(pickRow), // 초기 신호: 과거 0건 → 최근 3건 이상 새 용어
+    rows: r.rows.map(toEmergingRow),
+    early: (r.early ?? []).map(toEmergingRow), // 초기 신호: 과거 0건 → 최근 3건 이상 새 용어
   });
 });
 

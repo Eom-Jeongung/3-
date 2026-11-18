@@ -1,46 +1,36 @@
 import { useEffect, useState } from 'react'
 import PatentDetail from './PatentDetail.jsx'
 import TrendChart, { chartMax, seriesColor } from './TrendChart.jsx'
-import AiSummaryPanel from './AiSummaryPanel.jsx'
-import CompareChart, { COMPANY_LABELS } from './CompareChart.jsx'
+import CompareChart from './CompareChart.jsx'
+import { COMPANY_LABELS, COMPANY_OPTIONS, formatAppNo, formatCount, jsonOrThrow } from '../format.js'
 
 const EVIDENCE_COLUMNS = ['출원번호', '발명의 명칭', '출원인', '공개일', '상태', '선정 이유']
-// 1020230116992 -> 10-2023-0116992
-const formatAppNo = (n) => (n?.length === 13 ? `${n.slice(0, 2)}-${n.slice(2, 6)}-${n.slice(6)}` : n)
 
 const YEAR_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 const UNITS = [{ value: 'year', label: '연간' }, { value: 'half', label: '반기' }]
-const COMPANY_OPTIONS = [
-  { value: '', label: '전체' },
-  { value: 'own', label: '자사' },
-  { value: 'competitor', label: '삼성' },
-  { value: 'china', label: '중국 4사' },
-]
 // 보기: 분야별 비교(분야마다 작은 그래프, 그 안에서 자사 vs 경쟁사 — PRD v3) / 회사별 추이(회사마다 그래프, 그 안에서 분야별 선)
 const VIEWS = [{ value: 'field', label: '분야별 비교' }, { value: 'company', label: '회사별 추이' }]
 const ALL_COMPANIES = ['own', 'competitor', 'china']
 const COMPANY_NAMES = { own: '자사 (엘지디스플레이)', competitor: '경쟁사 (삼성디스플레이)', china: '중국 경쟁사 (BOE·CSOT·Tianma·Visionox 합계)' }
-const COMPANY_SHORT = { own: '자사', competitor: '삼성', china: '중국 4사' }
 const NOT_FIELD = ['미분류', '그 외']
 
-const formatCount = (n) => n.toLocaleString('ko-KR')
-const percent = (change) => (change === null ? '-' : `${change > 0 ? '+' : ''}${change}%`)
+const formatChange = (change) => (change === null ? '-' : `${change > 0 ? '+' : ''}${change}%`)
 
 // 분야를 누르면 내려갈 주소 (전체 → 1차 → 2차 → 3차)
-export function fieldHref(scope, groupLevel, group) {
+function fieldHref(scope, groupLevel, group) {
   const q = new URLSearchParams()
   for (const k of ['level1', 'level2', 'level3']) if (scope[k]) q.set(k, scope[k])
   if (group) q.set(groupLevel, group)
   return `#/field?${q}`
 }
 
-// 기간·단위·출원인 설정, 분야별 출원 추이 그래프, 요약과 근거 수치 (트렌드 메인과 분야 화면이 함께 쓴다)
-export default function TrendSection({ scope = {}, refreshKey, showAiSummary = true }) {
+// 기간·단위·출원인 설정, 분야별 출원 추이 그래프, 요약과 근거 수치 (기술 분야별 분석 화면)
+export default function TrendSection({ scope = {} }) {
   const [years, setYears] = useState(5)
   const [unit, setUnit] = useState('year')
   const [view, setView] = useState('field')
   const [company, setCompany] = useState('') // 회사별 추이 보기에서 고른 출원인
-  const [shown, setShown] = useState(ALL_COMPANIES) // 분야별 비교 보기에서 겹쳐 볼 회사
+  const [shownCompanies, setShownCompanies] = useState(ALL_COMPANIES) // 분야별 비교 보기에서 겹쳐 볼 회사
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
   const [showTable, setShowTable] = useState(false)
@@ -56,19 +46,19 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
     if (level2) q.set('level2', level2)
     if (level3) q.set('level3', level3)
     fetch(`/api/trends/series?${q}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(jsonOrThrow)
       .then((body) => { if (!cancelled) { setData(body); setError(null) } })
       .catch((e) => { if (!cancelled) setError(e.message) })
     return () => { cancelled = true }
-  }, [years, unit, company, view, level1, level2, level3, refreshKey])
+  }, [years, unit, company, view, level1, level2, level3])
 
   // 겹쳐 볼 회사 켜고 끄기 (하나는 남긴다)
-  const toggleShown = (c) => setShown((s) => (s.includes(c) ? (s.length > 1 ? s.filter((x) => x !== c) : s) : ALL_COMPANIES.filter((x) => x === c || s.includes(x))))
+  const toggleShown = (c) => setShownCompanies((s) => (s.includes(c) ? (s.length > 1 ? s.filter((x) => x !== c) : s) : ALL_COMPANIES.filter((x) => x === c || s.includes(x))))
 
   const summary = data?.summary
   // 자사·삼성은 같은 눈금으로 비교하고, 건수가 훨씬 적은 중국 4사는 따로 눈금을 잡는다 (같은 눈금이면 바닥에 붙어 안 보인다)
-  const korean = data ? data.companies.filter((c) => c !== 'china') : []
-  const yMax = data && korean.length ? chartMax({ ...data, companies: korean }) : 0
+  const koreanCompanies = data ? data.companies.filter((c) => c !== 'china') : []
+  const yMax = data && koreanCompanies.length ? chartMax({ ...data, companies: koreanCompanies }) : 0
   const chinaMax = data?.companies.includes('china') ? chartMax({ ...data, companies: ['china'] }) : 0
   const canDrill = (group) => data?.groupLevel && !NOT_FIELD.includes(group)
 
@@ -106,7 +96,7 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
           <div className="filter-group">
             <span className="filter-label">비교 대상</span>
             {ALL_COMPANIES.map((c) => (
-              <button key={c} className={`chip chip-tone tone-${c} ${shown.includes(c) ? 'active' : ''}`} aria-pressed={shown.includes(c)} onClick={() => toggleShown(c)}>
+              <button key={c} className={`chip chip-tone tone-${c} ${shownCompanies.includes(c) ? 'active' : ''}`} aria-pressed={shownCompanies.includes(c)} onClick={() => toggleShown(c)}>
                 <i className={`dot tone-${c}`} />{COMPANY_LABELS[c]}
               </button>
             ))}
@@ -127,7 +117,7 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
                 href={canDrill(g) ? fieldHref(scope, data.groupLevel, g) : null}
                 periods={data.periods}
                 series={Object.fromEntries(data.companies.map((c) => [c, data.series[c][g]]))}
-                companies={shown.filter((c) => data.companies.includes(c))}
+                companies={shownCompanies.filter((c) => data.companies.includes(c))}
                 summaryRow={summary?.rows.find((r) => r.group === g)}
                 summaryRange={summary ? `${summary.from} → ${summary.to}` : ''}
               />
@@ -157,7 +147,7 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
 
           <div className={`chart-grid-2 ${data.companies.length === 1 ? 'single' : ''}`}>
             {data.companies.map((c) => (
-              <TrendChart key={c} title={`${COMPANY_NAMES[c]}${c === 'china' && korean.length ? ' · 눈금 다름' : ''}`} periods={data.periods} groups={data.groups} series={data.series[c]} yMax={(c === 'china' ? chinaMax : yMax) || 1} />
+              <TrendChart key={c} title={`${COMPANY_NAMES[c]}${c === 'china' && koreanCompanies.length ? ' · 눈금 다름' : ''}`} periods={data.periods} groups={data.groups} series={data.series[c]} yMax={(c === 'china' ? chinaMax : yMax) || 1} />
             ))}
           </div>
 
@@ -208,7 +198,7 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
                 <tbody>
                   {data.companies.flatMap((c) => data.groups.map((g) => (
                     <tr key={`${c}${g}`}>
-                      <td>{COMPANY_SHORT[c]}</td>
+                      <td>{COMPANY_LABELS[c]}</td>
                       <th scope="row">{g}</th>
                       {data.series[c][g].map((v, i) => <td key={data.periods[i].key} className="num">{formatCount(v)}</td>)}
                     </tr>
@@ -219,8 +209,6 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
             </div>
           )}
 
-          {showAiSummary && <AiSummaryPanel scope={scope} onOpenPatent={setSelectedId} />}
-
           <div className="trend-summary">
             <div className="summary-box">
               <h3>증감 요약</h3>
@@ -230,7 +218,7 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
                 <ul>
                   {summary.highlights.map((h) => (
                     <li key={`${h.company}${h.group}`}>
-                      <b>{COMPANY_SHORT[h.company]}</b> {h.group} 출원은 {summary.from} {formatCount(h.first)}건에서 {summary.to} {formatCount(h.last)}건으로 <b>{percent(h.change)}</b> {h.change > 0 ? '늘었어요' : '줄었어요'}.
+                      <b>{COMPANY_LABELS[h.company]}</b> {h.group} 출원은 {summary.from} {formatCount(h.first)}건에서 {summary.to} {formatCount(h.last)}건으로 <b>{formatChange(h.change)}</b> {h.change > 0 ? '늘었어요' : '줄었어요'}.
                     </li>
                   ))}
                 </ul>
@@ -246,7 +234,7 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
                     <tr>
                       <th scope="col">분야</th>
                       {data.companies.flatMap((c) => [
-                        <th key={c} scope="col" className="num">{COMPANY_SHORT[c]}</th>,
+                        <th key={c} scope="col" className="num">{COMPANY_LABELS[c]}</th>,
                         <th key={`${c}c`} scope="col" className="num">증감</th>,
                       ])}
                     </tr>
@@ -257,7 +245,7 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
                         <th scope="row">{canDrill(r.group) ? <a className="field-link" href={fieldHref(scope, data.groupLevel, r.group)}>{r.group}</a> : r.group}</th>
                         {data.companies.flatMap((c) => [
                           <td key={c} className="num">{formatCount(r[c].first)} → {formatCount(r[c].last)}</td>,
-                          <td key={`${c}c`} className="num trend-change">{percent(r[c].change)}</td>,
+                          <td key={`${c}c`} className="num trend-change">{formatChange(r[c].change)}</td>,
                         ])}
                       </tr>
                     ))}
@@ -293,7 +281,7 @@ export default function TrendSection({ scope = {}, refreshKey, showAiSummary = t
                         >
                           <td className="mono">{formatAppNo(p.application_number)}</td>
                           <td className="title-cell" title={p.title}>{p.title}</td>
-                          <td><span className={`type-tag ${p.applicant_type}`}>{COMPANY_SHORT[p.applicant_type]}</span></td>
+                          <td><span className={`type-tag ${p.applicant_type}`}>{COMPANY_LABELS[p.applicant_type]}</span></td>
                           <td className="mono">{p.open_date}</td>
                           <td><span className={`status ${p.legal_status === '등록' ? 'status-registered' : p.legal_status === '공개' ? 'status-pending' : ''}`}>{p.legal_status}</span></td>
                           <td className="evidence-reason">{p.reason}</td>

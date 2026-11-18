@@ -3,9 +3,10 @@ import GuideDialog from './components/GuideDialog.jsx'
 import Icon from './components/Icon.jsx'
 import EmergingPage from './pages/EmergingPage.jsx'
 import FieldPage from './pages/FieldPage.jsx'
-import HomePage, { httpMessage } from './pages/HomePage.jsx'
+import HomePage from './pages/HomePage.jsx'
 import PatentsPage from './pages/PatentsPage.jsx'
 import SummaryPage from './pages/SummaryPage.jsx'
+import { jsonOrThrow } from './format.js'
 
 const AUTO_SYNC_DAYS = 90 // 서버 SYNC_INTERVAL_DAYS 기본값과 같게
 
@@ -55,10 +56,7 @@ export default function App() {
   const loadOverview = useCallback(async () => {
     try {
       setError(null)
-      const res = await fetch('/api/trends/overview')
-      // 서버가 꺼졌을 때는 JSON이 아닌 오류 화면이 오므로 상태 코드로 알려 준다
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? httpMessage(res.status))
-      setOverview(await res.json())
+      setOverview(await jsonOrThrow(await fetch('/api/trends/overview')))
     } catch (err) {
       setError(`트렌드를 불러오지 못했습니다: ${err.message === 'Failed to fetch' ? '서버에 연결할 수 없어요' : err.message}`)
     }
@@ -98,12 +96,12 @@ export default function App() {
           <span>1분 사용 안내</span>
         </button>
         <div className="side-sync">
-          <span className="side-sync-label">데이터 마지막 갱신</span>
+          <span>데이터 마지막 갱신</span>
           <strong>{formatDateTime(overview?.lastSyncedAt)}</strong>
           {nextSync && (
             <span className="side-sync-next">
               <Icon name="refresh" />
-              분기마다 자동 갱신 · 다음 {nextSync.getFullYear()}.{nextSync.getMonth() + 1}.{nextSync.getDate()}쯤
+              {AUTO_SYNC_DAYS}일마다 자동 갱신 · 다음 {nextSync.getFullYear()}.{nextSync.getMonth() + 1}.{nextSync.getDate()}
             </span>
           )}
         </div>

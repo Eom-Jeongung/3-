@@ -1,13 +1,13 @@
 // 트렌드 집계 (대시보드·기술 분야별 분석·AI 동향 요약이 함께 쓴다). AI 없이 DB만으로 계산한다
 import { db } from './db.js';
 import { CHINA_APPLICANTS } from './kipris.js';
+import { MIN_COUNT, UNPUBLISHED_MONTHS } from './summaryStats.js';
 
 const WINDOW_COUNT = 3; // 최근 12개월 + 비교용 이전 2개 구간
-export const MIN_COUNT = 30; // 건수가 적으면 몇 건 차이로 %가 크게 흔들려 증감을 내지 않는다
 const MOVER_LIMIT = 5; // 회사별로 보여 줄 세부 기술 수
 const UNCLASSIFIED = '미분류';
 export const COMPANIES = ['own', 'competitor', 'china']; // china: 중국 경쟁사 4곳 합계 (BOE·CSOT·Tianma·Visionox)
-const CURRENT_VERSION = '(SELECT MAX(criteria_version) FROM classification)';
+const LATEST_VERSION_SQL = '(SELECT MAX(criteria_version) FROM classification)';
 
 // 공개일 구간 집계: 그 구간 특허만 먼저 고르고 출원번호로 분류를 찾는다
 // 색인을 못 박지 않으면 특허마다 분류 표를 훑는 계획이 잡혀 서버가 멈출 수 있다
@@ -30,7 +30,7 @@ const emptyCounts = () => Object.fromEntries(COMPANIES.map((c) => [c, Array(WIND
 
 // 공개일 기준 12개월 구간. 특허는 출원 후 보통 18개월 뒤 공개되므로 출원일로 자르면 최근 구간이 비어 버린다
 // 달력 연도가 아니라 DB의 최신 공개일에서 거꾸로 12개월씩 자른다 (진행 중인 해만 적어 보이는 문제 방지)
-export function getWindows() {
+function getWindows() {
   const { latest } = db.prepare('SELECT MAX(open_date) latest FROM patents').get();
   if (!latest) return [];
   const totals = db.prepare('SELECT applicant_type, COUNT(*) n FROM patents WHERE open_date BETWEEN ? AND ? GROUP BY 1');
@@ -58,7 +58,7 @@ export function getOverview() {
   const byField = db.prepare(`
     SELECT p.applicant_type company, c.level2, c.level3, COUNT(*) n
     ${PATENTS_THEN_CLASSIFICATION}
-    WHERE c.is_primary = 1 AND c.criteria_version = ${CURRENT_VERSION}
+    WHERE c.is_primary = 1 AND c.criteria_version = ${LATEST_VERSION_SQL}
       AND p.open_date BETWEEN ? AND ?
     GROUP BY 1, 2, 3
   `);
@@ -93,7 +93,6 @@ export function getOverview() {
 // ---- 출원 추이 그래프 ----
 const MAX_SERIES = 7; // 그래프가 읽히는 선의 수. 나머지는 '그 외'로 묶는다
 const OTHER_GROUP = '그 외';
-const UNPUBLISHED_MONTHS = 18; // 출원 후 보통 이 기간이 지나야 공개되어 최근 구간이 적게 보인다
 
 const addMonths = (d, n) => { const r = new Date(d); r.setUTCMonth(r.getUTCMonth() + n); return r; };
 
@@ -202,7 +201,7 @@ function selectEvidence(summary, scope, groupLevel) {
     const where = `
       FROM patents p INDEXED BY idx_patents_application_date
       CROSS JOIN classification c INDEXED BY idx_classification_number ON c.application_number = p.application_number
-      WHERE p.applicant_type = @company AND c.is_primary = 1 AND c.criteria_version = ${CURRENT_VERSION} ${levelSql}
+      WHERE p.applicant_type = @company AND c.is_primary = 1 AND c.criteria_version = ${LATEST_VERSION_SQL} ${levelSql}
     `;
     const topicCount = db.prepare(`
       SELECT c.level3 topic, COUNT(*) n ${where}
@@ -261,13 +260,13 @@ export function getSeries({ years, unit, company, level1, level2, level3 }) {
   const params = Object.fromEntries(levels);
   const base = `
     FROM classification c JOIN patents p ON p.application_number = c.application_number
-    WHERE c.is_primary = 1 AND c.criteria_version = ${CURRENT_VERSION} ${levelSql}
+    WHERE c.is_primary = 1 AND c.criteria_version = ${LATEST_VERSION_SQL} ${levelSql}
   `;
 
   // 선과 색이 기간을 바꿔도 달라지지 않도록 전체 기간 건수로 순서를 고정한다
   const ranked = db.prepare(`
     SELECT ${groupExpr} grp, COUNT(*) n FROM classification c
-    WHERE c.is_primary = 1 AND c.criteria_version = ${CURRENT_VERSION} ${levelSql}
+    WHERE c.is_primary = 1 AND c.criteria_version = ${LATEST_VERSION_SQL} ${levelSql}
     GROUP BY 1 ORDER BY 2 DESC, 1
   `).all(params).map((r) => r.grp);
   const named = ranked.length > MAX_SERIES + 1 ? ranked.slice(0, MAX_SERIES) : ranked;

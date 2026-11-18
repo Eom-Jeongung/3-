@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Icon from '../components/Icon.jsx'
 import { DashLineChart, Donut, Sparkline } from '../components/DashCharts.jsx'
+import { formatCount, jsonOrThrow } from '../format.js'
 
 const SERIES = [
   { key: 'own', label: '자사', name: 'LG디스플레이', tag: 'own', icon: 'building' },
@@ -12,14 +13,13 @@ const formatDate = (iso) => iso.replaceAll('-', '.')
 const formatRange = ({ from, to }) => `${formatDate(from)} ~ ${formatDate(to)}`
 const WINDOW_LABELS = ['최근 12개월', '1년 전', '2년 전']
 
-const formatCount = (n) => n.toLocaleString('ko-KR')
 const signed = (pct) => `${pct > 0 ? '+' : ''}${pct}%`
 const pctChange = (cur, prev) => (prev ? Math.round(((cur - prev) / prev) * 100) : null)
 
 // 건수가 적은 분야는 몇 건 차이로 %가 크게 흔들려 표시하지 않는다 (백엔드 changeOf와 같은 기준)
 function changeText(current, previous, minCount = 0) {
   if (!previous || previous < minCount) return '-'
-  return signed(Math.round(((current - previous) / previous) * 100))
+  return signed(pctChange(current, previous))
 }
 
 // 2차 기술 분야 → 아이콘
@@ -31,11 +31,6 @@ const fieldLink = (level2, level3) => {
   return `#/field?${q}`
 }
 const sumGroups = (bySeries, i) => Object.values(bySeries).reduce((s, arr) => s + arr[i], 0)
-
-// 서버 오류 코드를 읽기 쉬운 말로 (502~504는 서버가 꺼졌거나 다시 켜지는 중)
-export const httpMessage = (status) => (status >= 502 && status <= 504
-  ? `서버가 응답하지 않아요. 잠시 뒤 다시 시도해 주세요. (${status})`
-  : `서버에서 오류가 났어요. (${status})`)
 
 // 카드 자리에 띄우는 불러오기 실패 안내 + 다시 시도
 function LoadFail({ what, message, onRetry }) {
@@ -104,23 +99,23 @@ function CompanyPanel({ series, fields, minCount }) {
   )
 }
 
-export default function HomePage({ overview, overviewError, onRetryOverview, refreshKey }) {
+export default function HomePage({ overview, overviewError, onRetryOverview }) {
   const [series, setSeries] = useState(null)
   const [seriesError, setSeriesError] = useState(null)
-  const [seriesTry, setSeriesTry] = useState(0) // "다시 시도"를 누르면 올려서 다시 받는다
+  const [seriesReload, setSeriesReload] = useState(0) // "다시 시도"를 누르면 올려서 다시 받는다
   const [showAllMovers, setShowAllMovers] = useState(false)
   const [showFieldTable, setShowFieldTable] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     fetch('/api/trends/series?years=5&unit=year')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(httpMessage(r.status)))))
+      .then(jsonOrThrow)
       .then((body) => { if (!cancelled) { setSeries(body); setSeriesError(null) } })
       .catch((e) => { if (!cancelled) setSeriesError(e.message === 'Failed to fetch' ? '서버에 연결할 수 없어요.' : e.message) })
     return () => { cancelled = true }
-  }, [refreshKey, seriesTry])
+  }, [seriesReload])
 
-  const retrySeries = () => { setSeriesError(null); setSeriesTry((n) => n + 1) }
+  const retrySeries = () => { setSeriesError(null); setSeriesReload((n) => n + 1) }
   // 공개 동향(overview)은 앱 전체가 받는다. 실패하면 App의 오류 문구를 그대로 보여 준다
   const overviewFail = !overview && overviewError
     ? <LoadFail what="최근 공개 동향" message={overviewError.replace(/^트렌드를 불러오지 못했습니다: /, '')} onRetry={onRetryOverview} />

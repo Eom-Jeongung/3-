@@ -1,17 +1,17 @@
-// Summary statistics use the requested calendar years and retain every group.
-// This deliberately does not use the chart's series limit or date window.
+// AI 동향 요약용 통계: 요청한 연도 그대로, 모든 분야를 담는다
+// 그래프와 달리 분야 수를 줄이거나 기간을 자르지 않는다
 const COMPANIES = ['own', 'competitor', 'china'];
 const LEVELS = ['level1', 'level2', 'level3'];
-// Existing project policy, not a statistical significance threshold.
+// 건수가 적으면 몇 건 차이로 %가 크게 흔들려 증감을 내지 않는다 (프로젝트 기준이며 통계적 유의성을 뜻하지 않는다)
 export const MIN_COUNT = 30;
+export const UNPUBLISHED_MONTHS = 18; // 출원 후 보통 이 기간이 지나야 공개되어 최근 구간이 적게 보인다
 const change = (first, last) => first >= MIN_COUNT && last >= MIN_COUNT ? Math.round((last - first) / first * 100) : null;
 
 export function getSummaryStats(db, { level1, level2, level3, from, to }, version) {
   if (!Number.isInteger(from) || !Number.isInteger(to) || from >= to || from < 1990 || to > 9999) {
     throw new Error('Invalid summary period');
   }
-  // Check the version across the DB, not just the selected scope: a valid
-  // classification version may legitimately have no patents in that scope.
+  // 고른 범위가 아니라 DB 전체에서 버전을 확인한다 (버전이 맞아도 그 범위에 특허가 없을 수 있다)
   const exists = db.prepare('SELECT 1 FROM classification WHERE is_primary = 1 AND criteria_version = ? LIMIT 1').get(version);
   if (!exists) {
     const versions = db.prepare('SELECT DISTINCT criteria_version FROM classification WHERE is_primary = 1 ORDER BY criteria_version').all()
@@ -44,7 +44,7 @@ export function getSummaryStats(db, { level1, level2, level3, from, to }, versio
   let cutoff = null;
   if (dates.opened) {
     const date = new Date(`${dates.opened}T00:00:00Z`);
-    date.setUTCMonth(date.getUTCMonth() - 18);
+    date.setUTCMonth(date.getUTCMonth() - UNPUBLISHED_MONTHS);
     cutoff = date.toISOString().slice(0, 10);
   }
   const periods = Array.from({ length: to - from + 1 }, (_, i) => {

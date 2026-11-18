@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { db, likePattern } from '../db.js';
 import { fetchClaims } from '../kipris.js';
 import { generatePatentSummary, latestPatentSummary, patentSummaryInput } from '../patentSummary.js';
-import { isAiConfigured } from '../ai.js';
+import { aiFailure, isAiConfigured } from '../ai.js';
 
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100; // 전체 8만 건을 한 번에 내려보내지 않도록 상한을 둔다
@@ -74,7 +74,7 @@ function buildQuery(query) {
   return { whereSql, params, orderBy };
 }
 
-// GET /api/patents?applicant_type=own|competitor&status=등록,공개&q=검색어&open_from=2025-01-01&open_to=2025-12-31
+// GET /api/patents?applicant_type=own|competitor|china&status=등록,공개&q=검색어&open_from=2025-01-01&open_to=2025-12-31
 //                  &level1=OLED&level2=설계&level3=화소 회로&sort=open_date&order=desc&limit=10&offset=0
 router.get('/', (req, res) => {
   const built = buildQuery(req.query);
@@ -140,7 +140,6 @@ router.get('/export.csv', (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   res.set('Content-Type', 'text/csv; charset=utf-8');
   res.set('Content-Disposition', `attachment; filename="patents-${today}.csv"; filename*=UTF-8''${encodeURIComponent(`특허목록_${today}.csv`)}`);
-  res.set('X-Export-Count', String(rows.length));
   res.send('﻿' + [header.join(','), ...lines].join('\r\n'));
 });
 
@@ -193,13 +192,8 @@ router.post('/:id/summary', async (req, res) => {
   try {
     res.json({ summary: await generatePatentSummary(id) });
   } catch (e) {
-    const busy = /HTTP 429/.test(e.message);
-    const slow = /timeout|aborted/i.test(e.message);
-    res.status(e.status ?? (busy || slow ? 503 : 500)).json({
-      error: busy ? 'AI 서버가 바빠요(무료 모델 공용 한도). 잠시 뒤 다시 시도해 주세요.'
-        : slow ? 'AI 응답이 3분 안에 오지 않았어요. 잠시 뒤 다시 시도해 주세요.'
-        : e.message,
-    });
+    const { status, message } = aiFailure(e);
+    res.status(status).json({ error: message });
   } finally {
     summarizing.delete(id);
   }

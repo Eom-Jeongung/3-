@@ -5,7 +5,7 @@
 import { db } from './db.js';
 import { chat, isAiConfigured } from './ai.js';
 
-export const PATENT_SECTIONS = ['한 줄 요약', '해결하려는 문제', '핵심 해결 수단', '기존 기술과의 차이', '핵심 키워드'];
+const PATENT_SECTIONS = ['한 줄 요약', '해결하려는 문제', '핵심 해결 수단', '기존 기술과의 차이', '핵심 키워드'];
 const MIN_ABSTRACT = 80; // 초록이 이보다 짧으면 요약할 내용이 부족하다
 const EFFECT_WORDS = ['신뢰성', '내구성', '수명', '광효율', '발광 효율', '고해상도', '정밀', '화질', '시인성', '투과율', '소비전력', '생산성', '수율', '원가', '박형화', '휘도', '저전력'];
 
@@ -46,7 +46,7 @@ export function patentSummaryInput(id) {
 }
 
 /** 검사: 원문에 없는 숫자, 원문에 없는 효과 말, 빠진 칸 */
-export function checkPatentSummary(answer, source) {
+function checkPatentSummary(answer, source) {
   const plain = source.replace(/\s+/g, '');
   const strangeNumbers = [...new Set((answer.match(/\d+(?:\.\d+)?/g) ?? []).filter((n) => !source.includes(n)))];
   const unsupported = EFFECT_WORDS.filter((w) => answer.includes(w) && !plain.includes(w.replace(/\s+/g, '')));
@@ -54,10 +54,10 @@ export function checkPatentSummary(answer, source) {
   return { strangeNumbers, unsupported, missingSections };
 }
 
-const parse = (r) => r && { ...r, checks: JSON.parse(r.checks) };
+const parseRow = (r) => r && { ...r, checks: JSON.parse(r.checks) };
 
 export function latestPatentSummary(id) {
-  return parse(db.prepare('SELECT * FROM patent_summaries WHERE patent_id = ? ORDER BY id DESC LIMIT 1').get(id));
+  return parseRow(db.prepare('SELECT * FROM patent_summaries WHERE patent_id = ? ORDER BY id DESC LIMIT 1').get(id));
 }
 
 /** AI로 요약을 만들고 저장한다 */
@@ -76,5 +76,5 @@ export async function generatePatentSummary(id) {
     INSERT INTO patent_summaries (patent_id, application_number, model, content, checks, used_claim, elapsed_ms)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(patent.id, patent.application_number, (process.env.AI_MODEL ?? '').trim(), content, JSON.stringify(checks), input.usedClaim ? 1 : 0, Date.now() - started);
-  return parse(db.prepare('SELECT * FROM patent_summaries WHERE id = ?').get(lastInsertRowid));
+  return parseRow(db.prepare('SELECT * FROM patent_summaries WHERE id = ?').get(lastInsertRowid));
 }

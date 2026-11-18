@@ -8,14 +8,14 @@ import { usePatentList } from '../hooks/usePatentList.js'
 const hrefOf = (levels) => `#/field?${new URLSearchParams(levels)}`
 
 // 기술 분야별 분석: 고른 분야의 추이와 특허 목록. 위 선택 칸으로 고르거나, 그래프 범례·표의 분야를 누르면 한 단계 더 내려간다
-export default function FieldPage({ scope, refreshKey }) {
+export default function FieldPage({ scope }) {
   const [sort, setSort] = useState({ key: 'open_date', order: 'desc' })
   const [selectedId, setSelectedId] = useState(null)
   const { level1, level2, level3 } = scope
 
   const params = { sort: sort.key, order: sort.order }
   for (const k of ['level1', 'level2', 'level3']) if (scope[k]) params[k] = scope[k]
-  const { data, error, loadingMore, loadMore, collapse } = usePatentList(params, refreshKey)
+  const { data, error, loadingMore, loadMore, collapse } = usePatentList(params)
 
   // 위 단계로 돌아가는 경로
   const crumbs = [
@@ -49,7 +49,7 @@ export default function FieldPage({ scope, refreshKey }) {
         </section>
 
         <div className="card-gap">
-          <TrendSection scope={scope} refreshKey={refreshKey} showAiSummary={false} />
+          <TrendSection scope={scope} />
         </div>
 
         <section className="card card-gap" aria-labelledby="field-patents-title">

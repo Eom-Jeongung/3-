@@ -11,7 +11,7 @@
 import fs from 'node:fs';
 import { db } from './db.js';
 
-export const PARAMS = {
+const PARAMS = {
   minDocs: 5,          // 최근 구간에서 최소 이 건수 이상
   llrThreshold: 10.83, // 우연일 확률 0.1% 수준
   maxDocShare: 0.08,   // 전체의 8% 넘게 나오면 흔한 단어
@@ -104,7 +104,7 @@ const GENERIC = new Set(['포함', '구성', '배치', '형성', '방법', '상�
 const isNumberish = (k) => /^[\d.,%~\-]+$/.test(k);
 
 /** 명칭·초록에서 1~3어절 명사구를 뽑는다. 같은 특허 안 중복은 1번 (Set) */
-export function extractTerms(text, surface) {
+function extractTerms(text, surface) {
   if (!text) return new Set();
   let t = text;
   for (const [pat, sub] of SYNONYMS) t = t.replace(pat, sub);
@@ -154,7 +154,7 @@ export function extractTerms(text, surface) {
 }
 
 /** 두 묶음 비교 로그우도비 (a/n1 = 최근, b/n2 = 과거) */
-export function logLikelihood(a, n1, b, n2) {
+function logLikelihood(a, n1, b, n2) {
   const total = n1 + n2, k = a + b;
   if (total === 0 || k === 0 || k === total) return 0;
   const cells = [

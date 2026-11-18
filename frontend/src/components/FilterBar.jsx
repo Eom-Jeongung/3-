@@ -41,7 +41,7 @@ export default function FilterBar({ filters, onChange, statuses, classification 
   ]
   const noClassification = classification.length === 0
 
-  const active = JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS)
+  const hasActiveFilters = JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS)
 
   return (
     <div className="filter-bar">
@@ -146,7 +146,7 @@ export default function FilterBar({ filters, onChange, statuses, classification 
         {noClassification && <span className="filter-note">분류 작업이 끝나면 선택할 수 있어요</span>}
       </div>
 
-      {active && <button className="filter-reset" onClick={() => onChange(EMPTY_FILTERS)}>필터 초기화</button>}
+      {hasActiveFilters && <button className="filter-reset" onClick={() => onChange(EMPTY_FILTERS)}>필터 초기화</button>}
     </div>
   )
 }

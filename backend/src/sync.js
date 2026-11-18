@@ -10,13 +10,13 @@ const addYears = (d, n) => { const r = new Date(d); r.setUTCFullYear(r.getUTCFul
 const addDays = (d, n) => { const r = new Date(d); r.setUTCDate(r.getUTCDate() + n); return r; };
 
 // 'YYYYMMDD' -> 'YYYY-MM-DD' (빈 값이면 null)
-export function toIsoDate(s) {
+function toIsoDate(s) {
   return /^\d{8}$/.test(s ?? '') ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : null;
 }
 
 // 존속기간 만료예정일: 특허(출원번호 10…) 출원일+20년, 실용신안(20…) +10년
 // 아직 살아있는(등록·공개) 건만 계산하고, 소멸·거절·취하 등은 null
-export function calcExpiryDate(applicationNumber, applicationDate, legalStatus) {
+function calcExpiryDate(applicationNumber, applicationDate, legalStatus) {
   if (!applicationDate || !['등록', '공개'].includes(legalStatus)) return null;
   const years = String(applicationNumber).startsWith('20') ? 10 : 20;
   return addYears(new Date(applicationDate), years).toISOString().slice(0, 10);

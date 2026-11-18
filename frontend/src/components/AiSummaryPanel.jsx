@@ -1,11 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { summaryCheckStatus } from './summaryCheckStatus.js'
-import { scopeHref } from './FieldPicker.jsx'
-
-const scopeNameOf = (x) => [x.level1, x.level2, x.level3].filter(Boolean).join(' › ') || '전체 분야'
-
-// 1020230116992 -> 10-2023-0116992
-const formatAppNo = (n) => `${n.slice(0, 2)}-${n.slice(2, 6)}-${n.slice(6)}`
+import { scopeHref, scopeLabel } from './FieldPicker.jsx'
+import { formatAppNo, jsonOrThrow } from '../format.js'
 
 // 굵은 글씨(**…**)와 출원번호(13자리)를 바꾼다. 출원번호는 누르면 특허 상세가 열린다
 function Inline({ text, evidence, onOpen }) {
@@ -110,7 +106,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
   const [busy, setBusy] = useState(false)
   const [showFacts, setShowFacts] = useState(false)
   const [archive, setArchive] = useState(null) // 보관함: 모든 분류에서 만든 요약 목록 (항목마다 분류가 있다)
-  const [archiveTry, setArchiveTry] = useState(0) // 새로 만들면 올려서 목록을 다시 받는다
+  const [archiveReload, setArchiveReload] = useState(0) // 새로 만들면 올려서 목록을 다시 받는다
   const [showArchive, setShowArchive] = useState(false)
   const [archiveHere, setArchiveHere] = useState(false) // true면 지금 분류의 요약만
   const [viewing, setViewing] = useState(null) // 보관함에서 고른 지난 요약 (없으면 최신 요약)
@@ -123,11 +119,11 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
   useEffect(() => {
     let cancelled = false
     fetch('/api/summaries/archive?all=1')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(jsonOrThrow)
       .then((body) => { if (!cancelled) setArchive(body.items) })
       .catch(() => { if (!cancelled) setArchive(null) })
     return () => { cancelled = true }
-  }, [archiveTry])
+  }, [archiveReload])
 
   // 보관함에서 다른 분류의 요약을 고르면 주소에 sid를 붙여 그 분류 화면으로 온다 → 열리자마자 그 요약을 보여 준다
   const sid = scope.sid
@@ -144,7 +140,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
     setError(null)
     const q = new URLSearchParams({ level1, level2, level3, ...(period && { from: period.from, to: period.to }) })
     fetch(`/api/summaries?${q}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then(jsonOrThrow)
       .then((body) => { if (!cancelled) setState(body) })
       .catch((e) => { if (!cancelled) setError(e.message) })
     return () => { cancelled = true }
@@ -153,7 +149,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
   // 끝 연도는 공개가 끝난 해까지만, 시작 연도는 끝 연도보다 앞이어야 한다
   const last = state?.lastCompleteYear
   const years = last ? Array.from({ length: last - FIRST_YEAR + 1 }, (_, i) => last - i) : []
-  const choose = (next) => {
+  const changePeriod = (next) => {
     const p = { from, to, ...next }
     if (p.from >= p.to) {
       if (next.from !== undefined) p.to = Math.min(last, p.from + 1)
@@ -166,16 +162,14 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
     setBusy(true)
     setError(null)
     try {
-      const res = await fetch('/api/summaries', {
+      const body = await jsonOrThrow(await fetch('/api/summaries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ level1, level2, level3, from, to }),
-      })
-      const body = await res.json()
-      if (!res.ok) throw new Error(body.error)
+      }))
       setViewing(null)
       setState((s) => ({ ...s, summary: body.summary }))
-      setArchiveTry((n) => n + 1)
+      setArchiveReload((n) => n + 1)
     } catch (e) {
       setError(e.message)
     } finally {
@@ -188,9 +182,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
     setError(null)
     if (id === state?.summary?.id) { setViewing(null); return }
     try {
-      const res = await fetch(`/api/summaries/${id}`)
-      const body = await res.json()
-      if (!res.ok) throw new Error(body.error)
+      const body = await jsonOrThrow(await fetch(`/api/summaries/${id}`))
       setViewing(body.summary)
       setShowFacts(false)
     } catch (e) {
@@ -208,10 +200,10 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
   const archiveShown = archive ? (archiveHere ? archive.filter(isHere) : archive) : []
   const hereCount = archive ? archive.filter(isHere).length : 0
 
-  const s = viewing ?? (state?.summary || null)
-  const { issues, notes, missing: olderChecks } = summaryCheckStatus(s?.checks)
+  const shownSummary = viewing ?? (state?.summary || null)
+  const { issues, notes, missing: olderChecks } = summaryCheckStatus(shownSummary?.checks)
   // 보관함 요약은 화면 기본 정보(state)보다 먼저 도착할 수 있어 state가 없을 수도 있다
-  const stale = s && state?.criteriaVersion && s.criteria_version !== state.criteriaVersion
+  const stale = shownSummary && state?.criteriaVersion && shownSummary.criteria_version !== state.criteriaVersion
 
   return (
     <div className="ai-summary">
@@ -220,11 +212,11 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
         {years.length > 0 && from && (
           <div className="period-picker">
             <span className="filter-label">출원 기간</span>
-            <select className="filter-input" aria-label="시작 연도" value={from} onChange={(e) => choose({ from: Number(e.target.value) })}>
+            <select className="filter-input" aria-label="시작 연도" value={from} onChange={(e) => changePeriod({ from: Number(e.target.value) })}>
               {years.filter((y) => y < last).map((y) => <option key={y} value={y}>{y}년</option>)}
             </select>
             <span>~</span>
-            <select className="filter-input" aria-label="끝 연도" value={to} onChange={(e) => choose({ to: Number(e.target.value) })}>
+            <select className="filter-input" aria-label="끝 연도" value={to} onChange={(e) => changePeriod({ to: Number(e.target.value) })}>
               {years.filter((y) => y > FIRST_YEAR).map((y) => <option key={y} value={y}>{y}년</option>)}
             </select>
           </div>
@@ -254,11 +246,11 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
           <ul>
             {archiveShown.map((a) => {
               const { issues, missing } = summaryCheckStatus(a.checks)
-              const current = s?.id === a.id
+              const current = shownSummary?.id === a.id
               return (
                 <li key={a.id}>
                   <button className={`archive-item ${current ? 'current' : ''}`} onClick={() => pickArchived(a)} aria-current={current || undefined}>
-                    <span className={`archive-scope ${isHere(a) ? 'here' : ''}`}>{scopeNameOf(a)}</span>
+                    <span className={`archive-scope ${isHere(a) ? 'here' : ''}`}>{scopeLabel(a)}</span>
                     <b>{a.period_from}~{a.period_to}년</b>
                     <span>{formatWhen(a.created_at)}</span>
                     <span className="muted">{a.source === 'auto' ? '분기 자동' : '직접 만듦'} · {a.model || '-'}</span>
@@ -276,7 +268,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
 
       {viewing && (
         <p className="archive-banner" role="status">
-          보관함에서 고른 <b>{scopeNameOf(viewing)} · {viewing.period_from}~{viewing.period_to}년</b> 요약({formatWhen(viewing.created_at)})을 보고 있어요.
+          보관함에서 고른 <b>{scopeLabel(viewing)} · {viewing.period_from}~{viewing.period_to}년</b> 요약({formatWhen(viewing.created_at)})을 보고 있어요.
           {' '}<button className="more-link" onClick={() => setViewing(null)}>최신 요약으로 돌아가기</button>
         </p>
       )}
@@ -289,24 +281,24 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
         <p className="placeholder-text">{from}~{to}년 요약은 아직 없어요. "AI 요약 만들기"를 누르면 1분 안팎으로 만들어져요.</p>
       )}
 
-      {s && (
+      {shownSummary && (
         <>
           <p className="table-meta">
-            {s.source === 'auto' && <><b>분기 자동 생성</b> · </>}
-            모델 {s.model || '-'} · 분류 기준 {s.criteria_version}
+            {shownSummary.source === 'auto' && <><b>분기 자동 생성</b> · </>}
+            모델 {shownSummary.model || '-'} · 분류 기준 {shownSummary.criteria_version}
             {stale && <b className="warn-text"> (지금 기준 {state.criteriaVersion}과 달라요. 다시 만들기를 권해요)</b>}
-            {' '}· {formatWhen(s.created_at)}
+            {' '}· {formatWhen(shownSummary.created_at)}
           </p>
           <div className="summary-actions">
             <button
               className="more-link"
-              onClick={async () => { await copyText(summaryText(s, scopeName, issues)); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
+              onClick={async () => { await copyText(summaryText(shownSummary, scopeName, issues)); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
             >
               {copied ? '복사했어요' : '요약 복사'}
             </button>
             <button
               className="more-link"
-              onClick={() => downloadText(summaryText(s, scopeName, issues), `AI동향요약_${scopeName}_${s.period_from}-${s.period_to}_${toLocal(s.created_at).toISOString().slice(0, 10)}.md`)}
+              onClick={() => downloadText(summaryText(shownSummary, scopeName, issues), `AI동향요약_${scopeName}_${shownSummary.period_from}-${shownSummary.period_to}_${toLocal(shownSummary.created_at).toISOString().slice(0, 10)}.md`)}
             >
               내려받기 (.md)
             </button>
@@ -322,8 +314,8 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
                     {issues.map(([k, label]) => (
                       <li key={k}>
                         <details>
-                          <summary>{label} <b>{s.checks[k].length}건</b></summary>
-                          <ul className="check-items">{s.checks[k].map((x, i) => <li key={i}>{x}</li>)}</ul>
+                          <summary>{label} <b>{shownSummary.checks[k].length}건</b></summary>
+                          <ul className="check-items">{shownSummary.checks[k].map((x, i) => <li key={i}>{x}</li>)}</ul>
                         </details>
                       </li>
                     ))}
@@ -334,17 +326,17 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
             )}
           {notes.length > 0 && (
             <details className="check-note">
-              <summary>참고: {notes.map(([k, label]) => `${label} ${s.checks[k].length}곳`).join(', ')} (요약 오류가 아니라 데이터가 적다는 안내예요)</summary>
-              <ul>{notes.flatMap(([k]) => s.checks[k].map((x, i) => <li key={`${k}${i}`}>{x}</li>))}</ul>
+              <summary>참고: {notes.map(([k, label]) => `${label} ${shownSummary.checks[k].length}곳`).join(', ')} (요약 오류가 아니라 데이터가 적다는 안내예요)</summary>
+              <ul>{notes.flatMap(([k]) => shownSummary.checks[k].map((x, i) => <li key={`${k}${i}`}>{x}</li>))}</ul>
             </details>
           )}
           <div className="ai-summary-body">
-            <SummaryBody content={s.content} evidence={s.evidence} onOpen={onOpenPatent} />
+            <SummaryBody content={shownSummary.content} evidence={shownSummary.evidence} onOpen={onOpenPatent} />
           </div>
-          {s.evidence?.length > 0 && (
+          {shownSummary.evidence?.length > 0 && (
             <details>
               <summary>근거 후보 특허 보기</summary>
-              <ul>{s.evidence.map((e) => (
+              <ul>{shownSummary.evidence.map((e) => (
                 <li key={e.number}>
                   <button className="appno-link" onClick={() => onOpenPatent(e.id)}>{formatAppNo(e.number)}</button>
                   {' '}· {e.title} · {e.reason}
@@ -358,7 +350,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
           <button className="more-link" onClick={() => setShowFacts((v) => !v)} aria-expanded={showFacts}>
             {showFacts ? 'AI에게 준 자료 닫기' : 'AI에게 준 자료 보기'}
           </button>
-          {showFacts && <pre className="ai-facts">{s.facts}</pre>}
+          {showFacts && <pre className="ai-facts">{shownSummary.facts}</pre>}
         </>
       )}
     </div>

@@ -1,5 +1,5 @@
 // AI 동향 요약 검사: AI가 자료에 없는 숫자를 만들었거나, 특허 설명에 다른 특허 내용을 섞었는지 찾는다
-// 요약 시험(scripts/summary-trial.js)과 나중의 요약 기능이 함께 쓴다
+// 화면의 요약 만들기와 시험 스크립트(scripts/summary-trial.js)가 함께 쓴다
 
 /** 요약의 다섯 칸 (프롬프트와 검사가 함께 쓴다) */
 export const SECTIONS = ['핵심 흐름', '성장 분야', '경쟁사 동향', '주목 특허', '한계'];
@@ -9,15 +9,15 @@ const EFFECT_WORDS = ['신뢰성', '내구성', '수명', '광효율', '발광 �
 // 회사 의도나 산업 단계를 단정하는 말 (프롬프트에서 금지)
 const OVERREACH = ['성숙 단계', '성숙기', '전략', '주력', '집중 투자', '경쟁 심화', '본격화', '선점', '시장 점유', '시장 확대', '중단', '동력', '위축', '관심이 줄', '관심이 감소', '핵심 분야', '핵심 연구', '핵심 기술로', '지속적으로 투자', '지속 투자', '집중하는', '집중하고'];
 
-const STOP = new Set(['자사', '경쟁사', 'LG디스플레이', '삼성디스플레이', '중심', '중국', 'BOE', 'CSOT', 'Tianma', 'Visionox', '출원', '특허', '기술', '구조', '분야', '증가', '감소',
+const STOP_WORDS = new Set(['자사', '경쟁사', 'LG디스플레이', '삼성디스플레이', '중심', '중국', 'BOE', 'CSOT', 'Tianma', 'Visionox', '출원', '특허', '기술', '구조', '분야', '증가', '감소',
   '포함', '구현', '확보', '향상', '동시', '배치', '적용', '형성', '지속', '표시', '장치', '디스플레이', '방지', '개선', '강화', '최적화',
   '도모', '추구', '명세서', '발명', '실시예', '제공', '관한', '것으로', '상기', '포함하는', '위치하는', '배치되는', '있다']);
 const JOSA = /(으로|에서|하여|하는|되는|을|를|이|가|은|는|의|에|로|와|과|도|만|및|한|해|된|함|등)$/;
 const VERB_END = /(한다|된다|이다|있다|하며|하고|하여|하는|하도록|하게|하면|되어|되며|되고|되는|시키는|시켜|함으로써|있는|없는|같은|위한|따른|통해)$/; // 동사·어미는 기술 용어가 아니다
-const squeeze = (t) => t.replace(/\s+/g, '');
+const removeSpaces = (t) => t.replace(/\s+/g, '');
 const termsOf = (text) => [...new Set((text.match(/[가-힣A-Za-z]{2,}/g) ?? [])
   .map((w) => w.replace(JOSA, ''))
-  .filter((w) => w.length >= 3 && !STOP.has(w) && !VERB_END.test(w)))];
+  .filter((w) => w.length >= 3 && !STOP_WORDS.has(w) && !VERB_END.test(w)))];
 
 /**
  * @param {string} answer AI 답
@@ -50,10 +50,10 @@ export function checkSummary(answer, statText, evidence) {
   // 선정 이유 괄호("(급증 용어 \"광학 부재\")")는 특허 설명이 아니므로 뺀다
   const stripReason = (t) => t.replace(/\([^()]*(급증 용어|증감이 큰 분야|선정 이유)[^()]*\)/g, ' ');
   const effectsMissing = (claim, cited) => EFFECT_WORDS.filter((w) => claim.includes(w) && !cited.some((e) => e.fullText.includes(w)));
-  const fieldWords = squeeze(evidence.map((x) => x.field ?? '').join(' ')); // 3차 이름(예: 시야각·투과 영역)은 AI가 분류로 적는 말
-  const isForeignTo = (w, cited) => !cited.some((e) => squeeze(e.fullText).includes(squeeze(w)))
-    && !fieldWords.includes(squeeze(w))
-    && evidence.some((x) => !cited.includes(x) && squeeze(x.fullText).includes(squeeze(w)));
+  const fieldWords = removeSpaces(evidence.map((x) => x.field ?? '').join(' ')); // 3차 이름(예: 시야각·투과 영역)은 AI가 분류로 적는 말
+  const isForeignTo = (w, cited) => !cited.some((e) => removeSpaces(e.fullText).includes(removeSpaces(w)))
+    && !fieldWords.includes(removeSpaces(w))
+    && evidence.some((x) => !cited.includes(x) && removeSpaces(x.fullText).includes(removeSpaces(w)));
   for (const line of answer.split('\n')) {
     const cites = [...line.matchAll(/\d{13}/g)].filter((m) => byNumber.has(m[0]));
     // "자사 2건(A, B)은 …, 경쟁사 2건(C, D)은 …"처럼 번호를 괄호로 묶어 쓴 줄은 설명이 번호 앞뒤로 오가므로
@@ -101,13 +101,13 @@ export function checkSummary(answer, statText, evidence) {
   const overreach = answer.split('\n').filter((l) => OVERREACH.some((w) => l.includes(w)))
     .map((l) => `${OVERREACH.filter((w) => l.includes(w)).join(', ')}: ${l.replace(/^[-*\s]+/, '').slice(0, 60)}…`);
   // 6. 선정 이유: 특허 뒤 괄호의 선정 이유가 그 특허의 실제 선정 이유와 같은지 (다른 특허 이유를 붙인 적이 있다)
-  const squeezeQ = (t) => squeeze(t).replace(/["“”'‘’]/g, '');
+  const removeSpacesAndQuotes = (t) => removeSpaces(t).replace(/["“”'‘’]/g, '');
   const wrongReasons = [];
   for (const line of answer.split('\n')) {
     const cites = [...line.matchAll(/\d{13}/g)].map((m) => byNumber.get(m[0])).filter(Boolean);
     if (cites.length !== 1 || !cites[0].reason) continue;
     for (const [, inside] of line.matchAll(/\(([^()]*(?:급증 용어|증감이 큰 분야)[^()]*)\)/g)) {
-      if (!squeezeQ(inside).includes(squeezeQ(cites[0].reason))) wrongReasons.push(`${cites[0].number}: "${inside}" (실제 선정 이유: ${cites[0].reason})`);
+      if (!removeSpacesAndQuotes(inside).includes(removeSpacesAndQuotes(cites[0].reason))) wrongReasons.push(`${cites[0].number}: "${inside}" (실제 선정 이유: ${cites[0].reason})`);
     }
   }
   // 7. 길이: 한 화면 안에 읽히게 (주목 특허 6건 이하, 전체 1,600자 이하)

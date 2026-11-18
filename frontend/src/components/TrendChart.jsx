@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { periodAxisLabel } from '../format.js'
 
 const HEIGHT = 300
 const MARGIN = { top: 28, right: 14, bottom: 30, left: 44 }
@@ -50,9 +51,8 @@ export default function TrendChart({ title, periods, groups, series, yMax }) {
 
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => t * yMax)
   const labelEvery = Math.ceil(periods.length / MAX_X_LABELS)
-  const xLabel = (p) => (p.key.includes('-H') ? `${p.key.slice(2, 4)}.${p.key.endsWith('1') ? '상' : '하'}` : p.key)
 
-  const pick = (clientX) => {
+  const hoverAt = (clientX) => {
     if (!periods.length || !innerWidth) return
     const box = wrapRef.current.getBoundingClientRect()
     const i = periods.length > 1 ? Math.round((clientX - box.left - MARGIN.left) / step) : 0
@@ -70,7 +70,7 @@ export default function TrendChart({ title, periods, groups, series, yMax }) {
         tabIndex={0}
         role="group"
         aria-label={`${title} 그래프. 좌우 화살표로 구간을 옮기면 값을 볼 수 있어요`}
-        onPointerMove={(e) => pick(e.clientX)}
+        onPointerMove={(e) => hoverAt(e.clientX)}
         onPointerLeave={() => setHover(null)}
         onFocus={() => setHover((h) => h ?? periods.length - 1)}
         onBlur={() => setHover(null)}
@@ -94,7 +94,7 @@ export default function TrendChart({ title, periods, groups, series, yMax }) {
               </g>
             ))}
             {periods.map((p, i) => (i % labelEvery === (periods.length - 1) % labelEvery) && (
-              <text key={p.key} x={x(i)} y={HEIGHT - 8} textAnchor="middle" className="chart-axis">{xLabel(p)}</text>
+              <text key={p.key} x={x(i)} y={HEIGHT - 8} textAnchor="middle" className="chart-axis">{periodAxisLabel(p)}</text>
             ))}
             {groups.map((g) => (
               <polyline

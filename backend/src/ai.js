@@ -80,3 +80,15 @@ export async function chat(messages, { maxTokens = 800, purpose = 'etc', timeout
     });
   }
 }
+
+/** 요약 API가 화면에 돌려줄 오류. 바쁨·시간 초과는 다시 시도하면 될 수 있어 503으로 알린다 */
+export function aiFailure(err) {
+  const busy = /HTTP 429/.test(err.message);
+  const slow = /timeout|aborted/i.test(err.message);
+  return {
+    status: err.status ?? (busy || slow ? 503 : 500),
+    message: busy ? 'AI 서버가 바빠요. 잠시 뒤 다시 시도해 주세요.'
+      : slow ? 'AI 응답이 3분 안에 오지 않았어요. 잠시 뒤 다시 시도해 주세요.'
+      : err.message,
+  };
+}

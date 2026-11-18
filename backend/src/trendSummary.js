@@ -2,10 +2,10 @@
 // - 숫자는 DB에서 계산한 값만 AI에게 준다 (비중도 미리 계산). 답은 summaryCheck.js로 검사한다
 // - 화면(routes/summaries.js)과 시험 스크립트(scripts/summary-trial.js)가 함께 쓴다
 import { db } from './db.js';
-import { getSummaryStats, MIN_COUNT } from './summaryStats.js';
+import { getSummaryStats, MIN_COUNT, UNPUBLISHED_MONTHS } from './summaryStats.js';
 import { chat, isAiConfigured } from './ai.js';
 import { CRITERIA_VERSION } from './classification.js';
-import { checkSummary, SECTIONS } from './summaryCheck.js';
+import { checkSummary } from './summaryCheck.js';
 import { burstTerms } from './emerging.js';
 import { checkStatistics } from './summaryStatCheck.js';
 import { groundInterpretations } from './summaryEvidence.js';
@@ -32,14 +32,14 @@ export function selectSummaryEvidence({ scope, from, to, data, bursts }, databas
   // 매번 같은 특허(결과를 비교할 수 있게), 날짜에 몰리지 않게
   const groupCol = data.groupLevel ?? 'level3';
   const scopeWhere = LEVELS.filter((k) => scope[k]).map((k) => `AND c.${k} = @${k}`).join(' ');
-  const detail = database.prepare(`
+  const evidenceDetail = database.prepare(`
     SELECT p.id, p.application_number number, p.applicant_type company, p.application_date date, p.legal_status status,
       c.${groupCol} field, p.title, p.abstract
     FROM patents p JOIN classification c ON c.application_number = p.application_number AND c.is_primary = 1 AND +c.criteria_version = @version
     WHERE p.application_number = @number AND p.applicant_type = @company ${scopeWhere}
       AND p.application_date BETWEEN @from AND @to
   `);
-  const pick = database.prepare(`
+  const patentsInGroup = database.prepare(`
     SELECT p.application_number number
     FROM patents p JOIN classification c ON c.application_number = p.application_number
     WHERE c.is_primary = 1 AND +c.criteria_version = @version ${scopeWhere}
@@ -51,7 +51,7 @@ export function selectSummaryEvidence({ scope, from, to, data, bursts }, databas
   const choose = (numbers, company, reason) => {
     for (const number of numbers) {
       if (chosen.has(number)) continue;
-      const e = detail.get({ ...scope, number, company, version: CRITERIA_VERSION, from: `${from}-01-01`, to: `${to}-12-31` });
+      const e = evidenceDetail.get({ ...scope, number, company, version: CRITERIA_VERSION, from: `${from}-01-01`, to: `${to}-12-31` });
       if (e) { chosen.set(number, { e, reason }); return; }
     }
   };
@@ -66,7 +66,7 @@ export function selectSummaryEvidence({ scope, from, to, data, bursts }, databas
     .sort((a, b) => moveSize(b) - moveSize(a))
     .slice(0, 2));
   for (const t of movers) {
-    const numbers = pick.all({ version: CRITERIA_VERSION, ...scope, group: t.group, company: t.company, year: String(to) })
+    const numbers = patentsInGroup.all({ version: CRITERIA_VERSION, ...scope, group: t.group, company: t.company, year: String(to) })
       .map((r) => r.number);
     choose(numbers, t.company, `증감이 큰 분야 "${data.groupLevel ? t.group : scope.level3}"`);
   }
@@ -90,11 +90,10 @@ export function selectSummaryEvidence({ scope, from, to, data, bursts }, databas
 export function buildSummaryInput({ level1, level2, level3, from, to }) {
   const scope = { level1, level2, level3 };
   const data = getSummaryStats(db, { ...scope, from, to }, CRITERIA_VERSION);
-  const keep = data.periods.map((p, i) => [p, i]).filter(([p]) => Number(p.key) >= from && Number(p.key) <= to);
-  if (keep.length < 2) throw new Error(`${from}~${to}년에 비교할 연도가 부족해요`);
-  const incomplete = keep.filter(([p]) => p.incomplete).map(([p]) => p.label);
+  const requestedPeriods = data.periods.map((p, i) => [p, i]).filter(([p]) => Number(p.key) >= from && Number(p.key) <= to);
+  if (requestedPeriods.length < 2) throw new Error(`${from}~${to}년에 비교할 연도가 부족해요`);
+  const incomplete = requestedPeriods.filter(([p]) => p.incomplete).map(([p]) => p.label);
   const { table, totals } = data;
-  const shares = table;
 
   // 급증 용어는 마지막 해 출원을 이전 연도들과 비교한다.
   const bursts = {};
@@ -116,7 +115,7 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
       : `${COMPANY[company]}: (증감률을 계산한 분야 없음)`;
   });
 
-  const years = keep.map(([p]) => p.key);
+  const years = requestedPeriods.map(([p]) => p.key);
   // 고른 범위 전체(예: "소자" 전체)의 합계도 대조할 수 있게 넣는다. AI는 "소자 분야 자사 320건 → 420건"처럼 합계를 자주 쓴다
   const totalField = scope.level3 || scope.level2 || scope.level1 || '전체';
   const structuredStats = {
@@ -158,7 +157,7 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
     ...table.map((t) => `${COMPANY[t.company]} - ${t.group}: ${t.counts.join(', ')} / 증감 ${changeText(t.change)}`),
     '',
     `[분야별 비중 (${years.at(-1)}년, 회사 전체 대비)]`,
-    ...shares.filter((t) => t.share !== null).map((t) => `${COMPANY[t.company]} - ${t.group}: ${t.share}%`),
+    ...table.filter((t) => t.share !== null).map((t) => `${COMPANY[t.company]} - ${t.group}: ${t.share}%`),
     '',
     '[증감률 순위 (높은 순)]',
     ...ranks,
@@ -179,12 +178,10 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
   return { facts, statText, evidence, structuredStats, dataWarnings };
 }
 
-const UNPUBLISHED_MONTHS = 18; // trendData.js와 같은 기준: 출원 후 보통 18개월 뒤 공개
-
 /** 공개가 끝난 마지막 연도 (그 해 12월 31일 출원까지 공개가 끝났다고 볼 수 있는 해). 요약 기본 기간의 끝 */
 export function lastCompleteYear() {
-  const { d } = db.prepare('SELECT MAX(open_date) d FROM patents').get();
-  const cutoff = new Date(d ?? Date.now());
+  const { latestOpen } = db.prepare('SELECT MAX(open_date) latestOpen FROM patents').get();
+  const cutoff = new Date(latestOpen ?? Date.now());
   cutoff.setUTCMonth(cutoff.getUTCMonth() - UNPUBLISHED_MONTHS);
   return cutoff.getUTCMonth() === 11 && cutoff.getUTCDate() === 31 ? cutoff.getUTCFullYear() : cutoff.getUTCFullYear() - 1;
 }
@@ -290,16 +287,16 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
   return getSummaryById(lastInsertRowid);
 }
 
-const parse = (r) => r && { ...r, evidence: JSON.parse(r.evidence), checks: JSON.parse(r.checks) };
+const parseRow = (r) => r && { ...r, evidence: JSON.parse(r.evidence), checks: JSON.parse(r.checks) };
 
 export function getSummaryById(id) {
-  return parse(db.prepare('SELECT * FROM trend_summaries WHERE id = ?').get(id));
+  return parseRow(db.prepare('SELECT * FROM trend_summaries WHERE id = ?').get(id));
 }
 
 /** 범위·기간의 가장 최근 요약 (분류 기준이 달라도 돌려주되 화면이 표시한다) */
 export function latestSummary({ level1, level2, level3, from, to }) {
   const s = scopeKey({ level1, level2, level3 });
-  return parse(db.prepare(`
+  return parseRow(db.prepare(`
     SELECT * FROM trend_summaries
     WHERE level1 = @level1 AND level2 = @level2 AND level3 = @level3 AND period_from = @from AND period_to = @to
     ORDER BY id DESC LIMIT 1

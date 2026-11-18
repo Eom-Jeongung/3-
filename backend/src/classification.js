@@ -114,7 +114,7 @@ function topByScore(doc, groups, { allowTie = true, skipCommon = false } = {}) {
   return tied && !allowTie ? null : top;
 }
 
-export function loadCriteria(version = CRITERIA_VERSION) {
+function loadCriteria(version = CRITERIA_VERSION) {
   const ipc = db.prepare('SELECT ipc_prefix, level1, level2, level3 FROM ipc_map WHERE criteria_version = ? ORDER BY rowid').all(version);
   const keywords = db.prepare('SELECT level1, level2, level3, keyword, requires FROM keyword_map WHERE criteria_version = ? ORDER BY rowid').all(version);
   const tags = db.prepare('SELECT tag, keyword, ipc_prefix FROM tag_map WHERE criteria_version = ? ORDER BY rowid').all(version);
@@ -305,7 +305,7 @@ function level2ByAllIpc(mappedCodes, ipcRowsOf, doc, criteria) {
  * 특허 하나를 판정한다.
  * @returns {{ rows: object[], tags: string[] }} rows의 첫 행이 주분류, 나머지가 부분류
  */
-export function classifyPatent({ ipcCodes, title, abstract, claims = [] }, criteria) {
+function classifyPatent({ ipcCodes, title, abstract, claims = [] }, criteria) {
   const doc = {
     title: normalize(title),
     body: normalize(`${abstract ?? ''} ${claims.join(' ')}`),

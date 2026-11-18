@@ -8,7 +8,7 @@ import { db } from './db.js';
 import { generateTrendSummary, lastCompleteYear, scopeLabel } from './trendSummary.js';
 import { CRITERIA_VERSION } from './classification.js';
 
-const HIDDEN = '미분류';
+const UNCLASSIFIED = '미분류';
 const RETRIES = 2; // 범위마다 처음 시도 + 2번 더
 const WAIT_MS = { busy: 90_000, between: 20_000 }; // 무료 모델 공용 한도를 피하려고 사이사이 쉰다
 
@@ -27,15 +27,15 @@ export function autoScopes() {
     SELECT level1, level2, COUNT(*) n FROM classification
     WHERE is_primary = 1 AND criteria_version = ? GROUP BY 1, 2
   `).all(CRITERIA_VERSION);
-  const sum = (key) => {
+  const namesByCount = (key) => {
     const m = new Map();
-    for (const r of rows) if (r[key] && r[key] !== HIDDEN) m.set(r[key], (m.get(r[key]) ?? 0) + r.n);
+    for (const r of rows) if (r[key] && r[key] !== UNCLASSIFIED) m.set(r[key], (m.get(r[key]) ?? 0) + r.n);
     return [...m].sort((a, b) => b[1] - a[1]).map(([name]) => name);
   };
   return [
     { level1: '', level2: '', level3: '' },
-    ...sum('level1').map((level1) => ({ level1, level2: '', level3: '' })),
-    ...sum('level2').map((level2) => ({ level1: '', level2, level3: '' })),
+    ...namesByCount('level1').map((level1) => ({ level1, level2: '', level3: '' })),
+    ...namesByCount('level2').map((level2) => ({ level1: '', level2, level3: '' })),
   ];
 }
 

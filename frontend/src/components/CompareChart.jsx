@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { COMPANY_LABELS, niceAxisMax, periodAxisLabel } from '../format.js'
 
 // 분류별 비교 (PRD v3 "그래프 하나 안에서 자사와 경쟁사를 비교"): 분야 하나에 회사별 선을 겹쳐 그린 작은 그래프
 // 눈금은 패널마다 따로 잡는다 (분야마다 건수 차이가 커서 같은 눈금이면 작은 분야는 바닥에 붙는다)
@@ -6,13 +7,6 @@ import { useEffect, useRef, useState } from 'react'
 const HEIGHT = 170
 const MARGIN = { top: 12, right: 10, bottom: 22, left: 38 }
 
-export const COMPANY_LABELS = { own: '자사', competitor: '삼성', china: '중국 4사' }
-
-const niceMax = (max) => {
-  if (max <= 0) return 10
-  const step = 10 ** Math.floor(Math.log10(max))
-  return [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((n) => max / step <= n) * step
-}
 const compact = (n) => (n >= 1000 ? `${Math.round(n / 100) / 10}K` : String(n))
 const signed = (pct) => (pct === null || pct === undefined ? '-' : `${pct > 0 ? '+' : ''}${pct}%`)
 
@@ -29,25 +23,24 @@ export default function CompareChart({ title, href, periods, series, companies, 
 
   const innerWidth = Math.max(width - MARGIN.left - MARGIN.right, 0)
   const innerHeight = HEIGHT - MARGIN.top - MARGIN.bottom
-  const yMax = niceMax(Math.max(1, ...companies.flatMap((c) => series[c] ?? [])))
+  const yMax = niceAxisMax(Math.max(1, ...companies.flatMap((c) => series[c] ?? [])))
   const step = periods.length > 1 ? innerWidth / (periods.length - 1) : 0
   const x = (i) => MARGIN.left + (periods.length > 1 ? i * step : innerWidth / 2)
   const y = (v) => MARGIN.top + innerHeight - (v / yMax) * innerHeight
 
   // 공개가 덜 된 구간: 음영 + 점선
   const firstIncomplete = periods.findIndex((p) => p.incomplete)
-  const done = firstIncomplete === -1 ? periods.length - 1 : Math.max(firstIncomplete - 1, 0)
+  const lastComplete = firstIncomplete === -1 ? periods.length - 1 : Math.max(firstIncomplete - 1, 0)
   const shadeX = firstIncomplete === -1 ? null : Math.max(MARGIN.left, x(firstIncomplete) - step / 2)
-  const xLabel = (p) => (p.key.includes('-H') ? `${p.key.slice(2, 4)}.${p.key.endsWith('1') ? '상' : '하'}` : p.key)
-  const labelIdx = [...new Set([0, done, periods.length - 1])]
+  const labelIndexes = [...new Set([0, lastComplete, periods.length - 1])]
 
-  const pick = (clientX) => {
+  const hoverAt = (clientX) => {
     if (!periods.length || !innerWidth) return
     const box = wrapRef.current.getBoundingClientRect()
     const i = periods.length > 1 ? Math.round((clientX - box.left - MARGIN.left) / step) : 0
     setHover(Math.min(Math.max(i, 0), periods.length - 1))
   }
-  const pts = (values, from, to) => values.slice(from, to + 1).map((v, k) => `${x(from + k)},${y(v)}`).join(' ')
+  const pointsOf = (values, from, to) => values.slice(from, to + 1).map((v, k) => `${x(from + k)},${y(v)}`).join(' ')
 
   return (
     <figure className="compare-panel">
@@ -67,9 +60,9 @@ export default function CompareChart({ title, href, periods, series, companies, 
         tabIndex={0}
         role="group"
         aria-label={`${title} 회사별 출원 추이. 좌우 화살표로 구간을 옮기면 값을 볼 수 있어요`}
-        onPointerMove={(e) => pick(e.clientX)}
+        onPointerMove={(e) => hoverAt(e.clientX)}
         onPointerLeave={() => setHover(null)}
-        onFocus={() => setHover((h) => h ?? done)}
+        onFocus={() => setHover((h) => h ?? lastComplete)}
         onBlur={() => setHover(null)}
         onKeyDown={(e) => {
           if (e.key === 'ArrowLeft') setHover((h) => Math.max((h ?? 0) - 1, 0))
@@ -85,16 +78,16 @@ export default function CompareChart({ title, href, periods, series, companies, 
                 <text x={MARGIN.left - 6} y={y(t * yMax) + 4} textAnchor="end" className="chart-axis">{compact(t * yMax)}</text>
               </g>
             ))}
-            {labelIdx.map((i) => (
-              <text key={i} x={x(i)} y={HEIGHT - 6} textAnchor={i === 0 ? 'start' : i === periods.length - 1 ? 'end' : 'middle'} className={`chart-axis ${periods[i].incomplete ? 'axis-dim' : ''}`}>{xLabel(periods[i])}</text>
+            {labelIndexes.map((i) => (
+              <text key={i} x={x(i)} y={HEIGHT - 6} textAnchor={i === 0 ? 'start' : i === periods.length - 1 ? 'end' : 'middle'} className={`chart-axis ${periods[i].incomplete ? 'axis-dim' : ''}`}>{periodAxisLabel(periods[i])}</text>
             ))}
             {companies.map((c) => {
               const values = series[c] ?? []
               return (
                 <g key={c} className={`line-${c}`}>
-                  <polyline points={pts(values, 0, done)} fill="none" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
-                  {done < values.length - 1 && (
-                    <polyline points={pts(values, done, values.length - 1)} fill="none" strokeWidth="1.8" strokeDasharray="3 4" strokeLinecap="round" opacity="0.6" />
+                  <polyline points={pointsOf(values, 0, lastComplete)} fill="none" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
+                  {lastComplete < values.length - 1 && (
+                    <polyline points={pointsOf(values, lastComplete, values.length - 1)} fill="none" strokeWidth="1.8" strokeDasharray="3 4" strokeLinecap="round" opacity="0.6" />
                   )}
                   {hover !== null && <circle cx={x(hover)} cy={y(values[hover])} r="3.5" className="chart-dot" />}
                 </g>
