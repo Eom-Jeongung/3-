@@ -34,6 +34,15 @@ const distDir = fileURLToPath(new URL('../../frontend/dist', import.meta.url));
 const serveScreen = fs.existsSync(path.join(distDir, 'index.html'));
 if (serveScreen) app.use(express.static(distDir));
 
+// 오류 처리: 오류 내용(파일 경로·코드 위치)은 서버 로그에만 남기고, 화면에는 짧은 안내만 보낸다 (보안 점검 8번)
+// Express 기본 오류 화면은 개발 환경에서 서버 경로가 담긴 오류 내용을 그대로 보여 준다
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  const status = err.status ?? err.statusCode ?? 500;
+  if (status >= 500) console.error(`[오류] ${req.method} ${req.originalUrl}:`, err);
+  res.status(status).json({ error: status < 500 ? '요청 형식이 올바르지 않아요' : '서버에서 오류가 났어요. 잠시 뒤 다시 시도해 주세요' });
+});
+
 // PORT가 아닌 API_PORT를 쓴다: 미리보기·호스팅 환경이 PORT를 프론트엔드용으로 미리 넣어두는 경우가 있어 충돌함
 // API_PORT가 없고 PORT만 있으면(천안 서버) 수업 규칙대로 PORT + 100을 쓴다
 // Render는 RENDER=true와 함께 서버가 받아야 할 PORT를 넣어 주므로, 그때는 PORT를 그대로 쓴다
