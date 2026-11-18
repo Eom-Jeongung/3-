@@ -1,0 +1,29 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "LG Display 특허 트렌드 센싱 서버 (Express + SQLite)",
+  "scripts": {
+    "db:init": "node --env-file-if-exists=.env scripts/init-db.js",
+    "sync": "node --env-file-if-exists=.env scripts/run-sync.js",
+    "probe": "node --env-file-if-exists=.env scripts/probe-kipris.js",
+    "collect": "node --env-file-if-exists=.env scripts/collect-full.js",
+    "collect-china": "node --env-file-if-exists=.env scripts/collect-china.js",
+    "classify": "node --env-file-if-exists=.env scripts/run-classify.js",
+    "ai-usage": "node --env-file-if-exists=.env scripts/ai-usage.js",
+    "predev": "node -e \"const fs=require('fs'); if(!fs.existsSync('.env')) fs.writeFileSync('.env','')\"",
+    "dev": "node --env-file-if-exists=.env --watch src/index.js",
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "auto-summary": "node --env-file-if-exists=.env scripts/auto-summary.js",
+    "summary-trial": "node --env-file-if-exists=.env scripts/summary-trial.js",
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.2.1",
+    "fast-xml-parser": "^5.11.2"
+  }
+}

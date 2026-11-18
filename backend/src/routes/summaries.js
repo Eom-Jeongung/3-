@@ -1,0 +1,68 @@
+import { Router } from 'express';
+import { generateTrendSummary, latestSummary, lastCompleteYear, listSummaries, getSummaryById } from '../trendSummary.js';
+import { aiFailure, isAiConfigured } from '../ai.js';
+import { CRITERIA_VERSION } from '../classification.js';
+
+const router = Router();
+const runningScopes = new Set(); // 같은 범위를 동시에 두 번 만들지 않게
+
+function parseScope(src) {
+  const from = Number(src.from);
+  const to = Number(src.to);
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from >= to || from < 1990) return null;
+  const pick = (k) => (typeof src[k] === 'string' && src[k].trim() ? src[k].trim() : '');
+  return { level1: pick('level1'), level2: pick('level2'), level3: pick('level3'), from, to };
+}
+
+// GET /api/summaries?level1=&level2=&level3=&from=2022&to=2024 → 이 범위·기간의 가장 최근 AI 요약
+// from·to를 빼면 공개가 끝난 마지막 연도까지 최근 3개 연도 (PRD v3 기본값)
+router.get('/', (req, res) => {
+  const last = lastCompleteYear();
+  const scope = parseScope({ from: last - 2, to: last, ...req.query });
+  if (!scope) return res.status(400).json({ error: 'from, to(연도)가 필요해요' });
+  res.json({
+    summary: latestSummary(scope) ?? null,
+    aiReady: isAiConfigured(),
+    criteriaVersion: CRITERIA_VERSION,
+    lastCompleteYear: last,
+    from: scope.from,
+    to: scope.to,
+    running: runningScopes.has(JSON.stringify(scope)),
+  });
+});
+
+// GET /api/summaries/archive?level1=&level2=&level3= → 보관함: 이 범위에서 만든 요약 목록 (기간 상관없이 최신순)
+// GET /api/summaries/archive?all=1 → 모든 분류의 요약 목록 (항목마다 1·2·3차 분류가 들어 있다)
+router.get('/archive', (req, res) => {
+  const pick = (k) => (typeof req.query[k] === 'string' ? req.query[k].trim() : '');
+  const scope = req.query.all === '1' ? null : { level1: pick('level1'), level2: pick('level2'), level3: pick('level3') };
+  res.json({ items: listSummaries(scope) });
+});
+
+// GET /api/summaries/:id → 보관함에서 고른 요약 하나
+router.get('/:id', (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: '요약 번호가 올바르지 않아요' });
+  const summary = getSummaryById(Number(req.params.id));
+  if (!summary) return res.status(404).json({ error: '그 요약을 찾을 수 없어요' });
+  res.json({ summary });
+});
+
+// POST /api/summaries { level1, level2, level3, from, to } → AI로 새로 만든다 (수십 초 걸릴 수 있음)
+router.post('/', async (req, res) => {
+  const scope = parseScope(req.body ?? {});
+  if (!scope) return res.status(400).json({ error: 'from, to(연도)가 필요해요' });
+  if (!isAiConfigured()) return res.status(503).json({ error: 'AI 설정이 없어요 (backend/.env 의 AI_BASE_URL, AI_MODEL)' });
+  const key = JSON.stringify(scope);
+  if (runningScopes.has(key)) return res.status(409).json({ error: '같은 요약을 이미 만드는 중이에요' });
+  runningScopes.add(key);
+  try {
+    res.json({ summary: await generateTrendSummary(scope) });
+  } catch (e) {
+    const { status, message } = aiFailure(e);
+    res.status(e.code === 'SUMMARY_CLASSIFICATION_VERSION_MISSING' ? 409 : status).json({ error: message });
+  } finally {
+    runningScopes.delete(key);
+  }
+});
+
+export default router;

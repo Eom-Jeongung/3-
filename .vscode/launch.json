@@ -1,0 +1,13 @@
+{
+  // F5 (또는 왼쪽 '실행 및 디버그' ▶) 한 번으로 백엔드 + 화면을 함께 실행
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "실행 (npm run dev)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
