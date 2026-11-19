@@ -2,6 +2,10 @@
 
 천안형 AI 교육 과제2 · 스폰서사 LG디스플레이 · 3팀 · 디스플레이 특허 자동 수집·분류·동향 분석 시스템
 
+> **데모:** https://3-production-29617a15.up.railway.app (접속 비밀번호는 팀에 문의)
+> 2026-11-18부터 Railway에서 운영 중임. 90일마다 새 특허를 받고, 분기마다 AI 동향 요약을 새로 만듦.
+> 배포 방법은 [10장](#10-배포-railway), 백업·복원은 [11장](#11-db-백업과-복원), 못 한 것은 [12장](#12-못-한-것)에 있음.
+
 ## 1. 이 시스템이 하는 일
 
 LG디스플레이와 경쟁사(삼성디스플레이, 중국 4사)의 한국 공개 특허를 자동으로 모아서 기술 분야별로 나누고,
@@ -105,7 +109,7 @@ KIPRIS에서 명칭, 초록, 출원인, 출원일·공개일·등록일, 상태,
 
 - **1차(방식):** OLED · LCD · 공통 · 마이크로LED
 - **2차(기술 분야):** 회로 · 광학 · 공정 · 소자 · TFT 소자 · 설계 · 기구 · 재료
-- **3차(세부 기술):** 50종 (11장 참고)
+- **3차(세부 기술):** 50종 (14장 참고)
 
 판정 순서는 IPC 코드 → 키워드 → 명칭 → 초록임. 앞에서 정해지면 뒤는 안 봄.
 
@@ -173,7 +177,7 @@ AI는 그걸 읽고 문장만 씀. AI가 직접 세거나 계산하게 하면 �
 
 **설정만 바꾸면 다른 AI로 교체됨.** AI를 부르는 코드는 `backend/src/ai.js` 한 곳뿐이고,
 주소·키·모델 이름 세 가지만 바꾸면 OpenRouter든 사내 AI 서버든 그대로 동작함.
-지금은 기능 시험용으로 OpenRouter의 무료 모델을 씀. 기능을 고도화할 때 유료 모델로 바꿀 예정임.
+배포 서버는 운영팀이 준 OpenRouter 키로 Claude Haiku 5.5(`anthropic/claude-haiku-5.5`)를 씀. 개발 초기에는 무료 모델로 기능을 시험했음.
 
 ### 7단계 · 요약 검사
 
@@ -240,13 +244,24 @@ winget install OpenJS.NodeJS.LTS
 
 설치 후 VS Code를 완전히 껐다 켜고 `node -v`로 확인함.
 
+### 필요 사양
+
+| 항목 | 필요한 것 |
+|---|---|
+| Node.js | 22.12 이상 |
+| 메모리 | 평소 약 270MB, 많을 때 약 570MB (천안 서버에서 잰 값) |
+| 디스크 | DB 약 225MB(정리본) + 여유. 오래 쓴 DB는 작업 기록 때문에 더 커질 수 있음 (천안 서버 원본 약 370MB) |
+| 네트워크 | KIPRIS와 AI 서버로 나가는 https 연결 |
+| 브라우저 | 최신 Chrome·Edge. 휴대폰 화면도 지원 |
+
 ### 1. 파일 받기
 
 ```powershell
 git clone https://github.com/Eom-Jeongung/3-.git
 cd 3-
-git switch patent-trend
 ```
+
+`main` 브랜치가 최신 코드이고, 배포 서버도 이 브랜치를 씀.
 
 이미 받았다면 최신으로 갱신함.
 
@@ -275,12 +290,14 @@ API_PORT=4000
 - 화면만 볼 거면 키가 없어도 됨
 - `=` 앞뒤에 띄어쓰기 넣지 말 것. 따옴표도 필요 없음
 - 천안 서버에서는 `API_PORT`를 비워 둘 것
+- 배포 서버에서만 `SITE_PASSWORD`를 넣음. 넣으면 화면과 API 전체에 비밀번호가 걸림
 - 이 파일은 깃허브에 올라가지 않음. 키를 채팅방·문서·캡처에 올리지 말 것
 
 ### 4. 데이터 넣기
 
 팀에서 받은 `patents.db`를 `backend/data/`에 넣으면 끝임.
 서버를 끈 상태에서 넣고, `patents.db-shm`, `patents.db-wal`이 있으면 지울 것.
+압축 백업 파일을 받았다면 [11장](#11-db-백업과-복원)의 복원 순서를 따름.
 
 ### 5. 실행
 
@@ -318,7 +335,7 @@ npm run dev
 npm run ai-usage --prefix backend
 ```
 
-모든 AI 호출은 `ai_calls` 테이블에 기록됨. 지금까지 기록은 이럼.
+모든 AI 호출은 `ai_calls` 테이블에 기록됨. 천안 서버 기록(2026-11-10 기준, 무료 모델)은 이럼.
 
 | 용도 | 호출 | 실패 | 평균 시간 |
 |---|---|---|---|
@@ -366,10 +383,11 @@ npm run ai-usage --prefix backend
 
 ### AI 요약은 아직 시험 단계임
 
-지금은 기능을 시험하는 단계라 무료 모델을 씀. 이번 분기 자동 요약 13개 중 9개가 검사에 하나 이상 걸렸음.
+개발 중 무료 모델로 만든 이번 분기 자동 요약은 13개 중 9개가 검사에 하나 이상 걸렸음.
 자료에 없는 숫자를 쓰거나, 특허 A를 설명하면서 특허 B 내용을 섞거나, "주력한다"처럼 회사 의도를 단정했음.
 
-기능을 고도화할 때 유료 모델로 바꿀 예정이고, 이 작업은 담당 팀원에게 인계됨.
+배포 서버는 Claude Haiku 5.5로 바꿨음. 배포 주소에서 시험한 요약 1건은 35초 걸렸고 숫자 불일치는 0건이었음.
+다만 여러 모델을 같은 조건으로 비교 평가하는 일은 아직 못 함.
 설정 세 줄(`AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`)만 바꾸면 되도록 만들어 둠.
 모델을 바꿔도 검사는 그대로 두고, 중요한 숫자는 근거 표와 근거 특허로 확인하는 게 안전함.
 
@@ -395,7 +413,85 @@ KIPRIS는 월 1,000번 한도라 전체 수집을 자주 할 수 없음. 그래�
 
 DB가 SQLite 파일 하나라 여러 서버에서 같이 쓸 수 없음. 서버가 꺼져 있으면 자동 갱신도 안 돎.
 
-## 10. 파일이 어디에 뭐가 있나
+## 10. 배포 (Railway)
+
+화면·서버·DB를 Railway 서비스 하나에 올림. 서버 하나가 화면과 API를 함께 보내고, DB 파일은 볼륨에 둠.
+
+| 항목 | 설정 |
+|---|---|
+| 플랜·지역 | Railway Hobby (결제 전까지 체험판), Southeast Asia (Singapore) |
+| 저장소·브랜치 | `Eom-Jeongung/3-` · `main` (합치면 자동으로 다시 배포됨) |
+| Build Command | `npm ci --prefix backend --omit=dev && npm ci --prefix frontend --include=dev && npm run build` |
+| Start Command | `npm start` |
+| Healthcheck Path | `/api/health` (비밀번호 없이 열림, 데이터 없음) |
+| 볼륨 | `/data` (DB는 `/data/patents.db`) |
+
+환경변수는 Railway의 Variables에 넣음. 키와 비밀번호는 채팅·문서에 적지 말 것.
+
+| 이름 | 값 | 이유 |
+|---|---|---|
+| `PORT`, `API_PORT` | `8080` | Railway 공개 포트와 서버 포트를 맞춤 |
+| `NODE_VERSION` | `22` | Node 22.12 이상 필요 |
+| `DB_PATH` | `/data/patents.db` | 없으면 다시 배포할 때 DB가 사라짐 |
+| `SITE_PASSWORD` | 팀 공용 비밀번호 (12자 이상) | 주소만 알면 누구나 AI 요약을 눌러 비용을 쓸 수 있어서 |
+| `KIPRIS_API_KEY` | 발급받은 키 | 자동 갱신, 청구항 |
+| `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL` | `https://openrouter.ai/api/v1`, 운영팀 키, `anthropic/claude-haiku-5.5` | AI 요약 |
+| `SYNC_INTERVAL_DAYS` | `90` | 자동 갱신 주기 |
+| `AUTO_SUMMARY` | `1` | 분기마다 동향 요약 13개 |
+
+알아 둘 것
+
+- 비밀번호를 10번 틀리면 그 접속 주소는 15분 동안 막힘. Railway가 알려 주는 실제 접속 주소(`X-Real-IP`)로 셈
+- 다시 배포하는 동안 잠깐 접속이 끊김. 수정은 모아서 합치고, 시연 직전에는 `main`에 합치지 말 것
+- 배포 서버가 자동 갱신·자동 요약을 맡으므로 천안 서버 `.env`는 `SYNC_INTERVAL_DAYS=0`, `AUTO_SUMMARY`는 비워 둠. 둘 다 켜면 KIPRIS·AI 한도를 두 번 씀
+- 콘솔(Railway → 서비스 → Console)에서 `node`가 안 잡히면 먼저 이 줄을 실행함
+
+```bash
+export PATH="$(ls -d /mise/installs/node/*/bin | head -1):$PATH"
+```
+
+## 11. DB 백업과 복원
+
+### 백업 (서버를 켠 채로 가능)
+
+`VACUUM INTO`로 빈 공간을 뺀 정리본을 만들고 압축함. 주 1회와 실습서버 종료 전에 함.
+
+```bash
+cd /app/backend
+node -e 'require("better-sqlite3")("/data/patents.db",{readonly:true}).exec("VACUUM INTO \x27/tmp/patents-backup.db\x27")'
+node -e 'const d=require("better-sqlite3")("/tmp/patents-backup.db",{readonly:true});console.log(d.pragma("integrity_check",{simple:true}),d.prepare("select count(*) n from patents").get().n)'
+gzip -9 /tmp/patents-backup.db
+sha256sum /tmp/patents-backup.db.gz
+```
+
+- 두 번째 줄 결과가 `ok`이고 특허 건수가 화면과 같으면 정상임
+- Railway에서는 압축 파일을 `/app`으로 복사한 뒤, 콘솔 아래 파일 창에서 파일을 오른쪽 클릭 → Download로 받음. 받은 뒤 `/app`과 `/tmp`의 복사본은 지움
+- 볼륨(`/data`)에는 정리본을 만들지 말 것. 체험판 볼륨은 약 430MB라 DB 두 개가 들어가지 않음
+- 백업 파일과 검증값(SHA-256)은 깃허브에 올리지 말고 팀 안에서 보관함
+
+### 복원
+
+1. 받은 압축 파일의 검증값이 백업할 때 적은 값과 같은지 확인함 (`sha256sum`)
+2. 압축을 풀고 위 확인 명령으로 `ok`와 건수를 확인함
+3. 서버를 끄고 `patents.db`를 교체함. 같은 폴더의 `patents.db-shm`, `patents.db-wal`은 지움
+4. 서버를 켜고 화면의 건수와 마지막 갱신 시각을 확인함
+
+Railway에서는 콘솔 파일 창의 Upload로 압축 파일을 `/data`에 올리고, 콘솔에서 1~3을 한 뒤 서비스를 Restart함.
+
+## 12. 못 한 것
+
+| 항목 | 상태 | 이유 |
+|---|---|---|
+| 만료 관리 (만료 임박 표시, 만료일 정렬) | 안 함 | 원래 과제 범위였지만 2026-10-16 담당자 인터뷰에서 제외 요청 |
+| 변경 알림 (메일·메신저) | 안 함 | 자동 수집과 분류를 먼저 함 |
+| 미국 특허 | 안 함 | 국내 특허와 핵심 기능을 먼저 끝내기로 함 |
+| 신규 출원 기준 집계 | 안 함 | 패밀리·후속 건을 출원번호로 가릴 수 없고, 건마다 상세 API를 불러야 함 |
+| AI 질문 기능 | 보류 | 동향 요약을 먼저 끝내기로 함 |
+| 요약 모델 비교 평가 | 안 함 | 비교 방법만 정함 (같은 조건 요약 → 자동 검사 → 통과율·시간·비용 비교) |
+| 서버의 하루 AI 호출 상한 | 안 함 | 접속 비밀번호와 OpenRouter 키 사용 한도로 대신 막음 |
+| 3차 세부 기술 정확도 | 약 75~80% | 키워드 보강이 더 필요함 (2차는 약 85%) |
+
+## 13. 파일이 어디에 뭐가 있나
 
 ```
 patent-trend/
@@ -434,7 +530,7 @@ patent-trend/
 
 ★ 표시가 주로 고치는 파일임.
 
-## 11. 분류 체계
+## 14. 분류 체계
 
 팀 문서 "LG디스플레이 특허 트렌드센싱 v0.2 기술 분류 체계"를 바탕으로, 검증하며 고친 기준 v0.5.5임.
 
@@ -463,7 +559,7 @@ patent-trend/
 
 분야마다 "기타"가 하나씩 더 있음.
 
-## 12. 분류 기준이나 대상 회사를 바꾸고 싶다면
+## 15. 분류 기준이나 대상 회사를 바꾸고 싶다면
 
 ### 분류 기준
 
