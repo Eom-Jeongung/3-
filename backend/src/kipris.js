@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const BASE_URL = 'http://plus.kipris.or.kr/kipo-api/kipi/patUtiModInfoSearchSevice/getAdvancedSearch';
+const BASE_URL = 'https://plus.kipris.or.kr/kipo-api/kipi/patUtiModInfoSearchSevice/getAdvancedSearch';
 // 무료 한도(월 1,000회)를 아끼기 위해 개발 중에는 같은 요청을 디스크에 캐싱
 const CACHE_DIR = path.join(path.dirname(process.env.DB_PATH || './data/patents.db'), 'kipris-cache');
 
@@ -66,7 +66,7 @@ export async function searchPatents(params, { useCache = true } = {}) {
   return { totalCount: Number(response.count?.totalCount ?? 0), items, fromCache };
 }
 
-const DETAIL_URL = 'http://plus.kipris.or.kr/kipo-api/kipi/patUtiModInfoSearchSevice/getBibliographyDetailInfoSearch';
+const DETAIL_URL = 'https://plus.kipris.or.kr/kipo-api/kipi/patUtiModInfoSearchSevice/getBibliographyDetailInfoSearch';
 const detailParser = new XMLParser({ parseTagValue: false, isArray: (name) => name === 'claimInfo' });
 
 /**
