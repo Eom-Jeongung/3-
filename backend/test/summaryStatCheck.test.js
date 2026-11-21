@@ -81,3 +81,12 @@ test('연도를 하나도 적지 않은 증감률은 첫해 대비 마지막 해
 test('기준 숫자(30건 미만)와 중국 4사는 대조 대상이 아니다', () => {
   assert.deepEqual(checkStatistics('- 중국 4사는 연간 30건 미만이라 추세를 단정하지 않는다', stats), { statMismatches: [], statUnverified: [] });
 });
+
+// 2026-11-21 배포 요약(OLED > 소자): 연도를 숫자 뒤 괄호에 쓰면 뒤 숫자를 앞 연도로 잘못 짝지어 "숫자 다름"이 났다
+test('연도를 숫자 뒤 괄호에 쓴 "100건(2020년) → 150건(2022년, 50% 증가)"도 맞게 읽는다', () => {
+  const result = checkStatistics(`자사 ${field} 100건(2020년) → 150건(2022년, 50% 증가)\n삼성 ${field} 80건(2020년) → 120건(2022년)`, stats);
+  assert.deepEqual(result, { statMismatches: [], statUnverified: [] });
+  const wrong = checkStatistics(`자사 ${field} 100건(2020년) → 140건(2022년)`, stats);
+  assert.equal(wrong.statMismatches.length, 1);
+  assert.match(wrong.statMismatches[0], /2022 \/ count: 요약 140, 통계 150/);
+});
