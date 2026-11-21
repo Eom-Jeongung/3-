@@ -1,8 +1,8 @@
 // AI 동향 요약 검사: AI가 자료에 없는 숫자를 만들었거나, 특허 설명에 다른 특허 내용을 섞었는지 찾는다
 // 화면의 요약 만들기와 시험 스크립트(scripts/summary-trial.js)가 함께 쓴다
 
-/** 요약의 다섯 칸 (프롬프트와 검사가 함께 쓴다) */
-export const SECTIONS = ['핵심 흐름', '성장 분야', '경쟁사 동향', '주목 특허', '한계'];
+/** 요약의 일곱 칸 (프롬프트와 검사가 함께 쓴다). 핵심 메시지·시사점은 2026-11 담당자님 피드백으로 추가 */
+export const SECTIONS = ['핵심 메시지', '핵심 흐름', '성장 분야', '경쟁사 동향', '주목 특허', '시사점', '한계'];
 
 // 특허 설명에 붙이기 쉬운 효과 말. 그 특허 초록에 없으면 AI가 덧붙인 것
 const EFFECT_WORDS = ['신뢰성', '내구성', '수명', '광효율', '발광 효율', '고해상도', '정밀화', '화질', '시인성', '투과율', '소비전력', '생산성', '수율', '원가', '박형화'];
@@ -110,11 +110,11 @@ export function checkSummary(answer, statText, evidence) {
       if (!removeSpacesAndQuotes(inside).includes(removeSpacesAndQuotes(cites[0].reason))) wrongReasons.push(`${cites[0].number}: "${inside}" (실제 선정 이유: ${cites[0].reason})`);
     }
   }
-  // 7. 길이: 한 화면 안에 읽히게 (주목 특허 6건 이하, 전체 1,600자 이하)
+  // 7. 길이: 한 화면 안에 읽히게 (주목 특허 6건 이하, 전체 1,800자 이하. 핵심 메시지·시사점이 늘어 1,600에서 올림)
   const formatIssues = [];
   const notable = answer.split(/^##\s*주목 특허.*$/m)[1]?.split(/^##/m)[0] ?? '';
   const notableCount = notable.split('\n').filter((l) => /\d{13}/.test(l)).length;
   if (notableCount > 6) formatIssues.push(`주목 특허 ${notableCount}건 (5건 안팎이어야 함)`);
-  if (answer.length > 1600) formatIssues.push(`전체 ${answer.length}자 (1,600자 이하여야 함)`);
+  if (answer.length > 1800) formatIssues.push(`전체 ${answer.length}자 (1,800자 이하여야 함)`);
   return { strangeNumbers: [...strangeNumbers], strangePatents, mixups, unsupported, overreach, missingSections, wrongReasons, formatIssues };
 }

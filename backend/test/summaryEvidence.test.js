@@ -67,3 +67,17 @@ test('기간 중 작은 표본이 있으면 사실 인용이 있어도 해석을
   const sufficient = { ...small, values: small.values.map((v) => v.year === 2020 ? { ...v, value: 30 } : v) };
   assert.match(groundInterpretations(text, evidence, sufficient).content, /특허\(1020240147664\)/);
 });
+
+// 2026-11-21: 시사점 칸(담당자님 피드백으로 추가)은 숫자 없이 살펴볼 점을 쓰므로 숫자가 없다고 표시하지 않는다
+test('시사점은 숫자가 없어도 표시하지 않고, 근거 목록에 없는 특허나 틀린 숫자만 표시한다', () => {
+  const ok = '## 시사점\n- 확인해 볼 점: 자사 터치·센서의 주목 특허(1020240147664)를 더 살펴보면 좋다.';
+  const okResult = groundInterpretations(ok, evidence, stats);
+  assert.equal(okResult.content, ok);
+  assert.deepEqual(okResult.warnings, []);
+
+  const unknown = groundInterpretations('## 시사점\n- 확인해 볼 점: 1020240147665 특허를 살펴본다.', evidence, stats);
+  assert.match(unknown.content, /- \[확인 필요\] 확인해 볼 점/);
+
+  const wrong = groundInterpretations(`## 시사점\n- 확인해 볼 점: 자사 ${field} 2022년 99건을 살펴본다.`, evidence, stats);
+  assert.match(wrong.content, /- \[숫자 다름\] 확인해 볼 점/);
+});

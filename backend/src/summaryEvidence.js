@@ -21,6 +21,14 @@ export function groundInterpretations(content, evidence, stats) {
     const foreign = FOREIGN.test(body);
     if (foreign) foreignText.push(body);
     if (/한계/.test(section)) return foreign ? mark('foreign', body) : line;
+    // 시사점은 숫자 없이 "더 살펴볼 점"을 쓰는 칸이라, 숫자가 없다고 [확인 필요]를 붙이지 않는다
+    // 숫자를 썼으면 자료와 맞는지, 특허를 들었으면 근거 목록에 있는 특허인지만 본다
+    if (/시사점/.test(section)) {
+      if (foreign) { warnings.push(`한국어가 아닌 글자가 섞인 문장: ${body}`); return mark('foreign', body); }
+      if ((body.match(/\d{13}/g) ?? []).some((n) => !byNumber.has(n))) { warnings.push(`근거 목록에 없는 특허를 든 시사점: ${body}`); return mark('unverified', body); }
+      if (checkStatistics(body, stats).statMismatches.length) { warnings.push(`자료와 다른 숫자: ${body}`); return mark('mismatch', body); }
+      return `- ${body}`;
+    }
 
     if (!/^(?:\*\*)?해석\s*:/.test(body)) {
       if (/주목 특허/.test(section)) {

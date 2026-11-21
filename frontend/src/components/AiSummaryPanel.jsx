@@ -26,15 +26,28 @@ function splitFlag(text) {
 }
 
 // AI 답(마크다운 일부: ## 제목, - 목록, **굵게**)을 화면 요소로
+// "핵심 메시지" 칸(2026-11 담당자님 피드백으로 추가)은 제목 대신 맨 위 강조 띠로 보여 준다. 예전 요약에는 이 칸이 없다
 function SummaryBody({ content, evidence, onOpen }) {
   const blocks = []
   let list = null
+  let headline = false
   for (const raw of content.split('\n')) {
     const line = raw.trim()
     if (!line || line === '---') { list = null; continue }
     if (line.startsWith('#')) {
       list = null
-      blocks.push(<h4 key={blocks.length}>{line.replace(/^#+\s*/, '')}</h4>)
+      const title = line.replace(/^#+\s*/, '')
+      headline = title.startsWith('핵심 메시지')
+      if (!headline) blocks.push(<h4 key={blocks.length}>{title}</h4>)
+    } else if (headline && /^[-*]\s+/.test(line)) {
+      const { flag, rest: text } = splitFlag(line.replace(/^[-*]\s+/, ''))
+      blocks.push(
+        <p key={blocks.length} className={['ai-headline', flag && `line-flag ${LINE_FLAGS[flag]}`].filter(Boolean).join(' ')}>
+          <span className="ai-headline-label">핵심 메시지</span>
+          {flag && <span className="flag-badge" title="자동 검사 표시: 아래 검사 결과와 근거를 확인해 주세요">{flag}</span>}
+          <Inline text={text} evidence={evidence} onOpen={onOpen} />
+        </p>,
+      )
     } else if (/^[-*]\s+/.test(line)) {
       if (!list) { list = []; blocks.push(<ul key={blocks.length}>{list}</ul>) }
       const { flag, rest: text } = splitFlag(line.replace(/^[-*]\s+/, ''))

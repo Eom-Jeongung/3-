@@ -10,6 +10,9 @@ const config = () => ({
   model: (process.env.AI_MODEL ?? '').trim(),
   // 적었을 때만 보낸다. 모델마다 받는지가 달라서 (예: Claude Haiku 5.5는 temperature를 받지 않음)
   temperature: (process.env.AI_TEMPERATURE ?? '').trim(),
+  // 생각(추론) 길이: low / medium / high. 적었을 때만 OpenRouter 형식(reasoning.effort)으로 보낸다
+  // Claude Haiku 5.5는 자료가 많은 동향 요약에서 출력 한도를 전부 생각에 쓰고 빈 답을 돌려준 적이 있어 low로 줄인다 (2026-11-21)
+  reasoningEffort: (process.env.AI_REASONING_EFFORT ?? '').trim(),
 });
 
 export function isAiConfigured() {
@@ -40,9 +43,10 @@ function logCall(row) {
  * @returns {Promise<string>} 모델이 돌려준 글
  */
 export async function chat(messages, { maxTokens = 800, purpose = 'etc', timeoutMs = TIMEOUT_MS } = {}) {
-  const { baseUrl, apiKey, model, temperature } = config();
+  const { baseUrl, apiKey, model, temperature, reasoningEffort } = config();
   if (!baseUrl || !model) throw new Error('AI 설정(AI_BASE_URL, AI_MODEL)이 비어 있습니다');
   const sampling = temperature !== '' && Number.isFinite(Number(temperature)) ? { temperature: Number(temperature) } : {};
+  if (reasoningEffort) sampling.reasoning = { effort: reasoningEffort };
 
   const started = Date.now();
   let usage;
