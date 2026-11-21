@@ -19,8 +19,9 @@ const app = express();
 // 서버 상태 확인 (Render가 살아 있는지 보는 주소). 비밀번호 없이 열린다
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+// 비밀번호 입력 화면이 보낸 비밀번호를 읽어야 해서, JSON 읽기를 비밀번호 확인보다 먼저 둔다
+app.use(express.json({ limit: '100kb' }));
 app.use(siteAuth(process.env.SITE_PASSWORD));
-app.use(express.json());
 
 app.use('/api/patents', patentsRouter);
 app.use('/api/sync', syncRouter);
