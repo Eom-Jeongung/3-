@@ -4,15 +4,31 @@
 import fs from 'node:fs';
 import { db } from './db.js';
 
-export const CRITERIA_VERSION = 'v0.5.5';
+export const CRITERIA_VERSION = 'v0.5.6'; // v0.5.6: IPC 3차 힌트를 표본 채점(75% 이상)한 9개만 남김, 3차 근거(level3_basis) 저장, 1차에 '전계발광' 키워드와 구동 회로 IPC 추가 (2026-11-22)
 export const UNCLASSIFIED = '미분류';
 const COMMON = '공통';
 const TITLE_WEIGHT = 3; // 명칭에 나온 키워드는 초록·청구항보다 3배로 센다 (4-4)
 
 // 마이크로LED 코드는 본문에 이 말이 있을 때만 마이크로LED로 본다 (2장). 나머지는 대부분 일반 LED(백라이트 등)
 const MICRO_LED_CODES = ['H10H', 'H01L 33', 'H01L 25/075'];
-const MICRO_LED_WORDS = ['마이크로 LED', 'micro LED', '마이크로 발광 다이오드'];
+const MICRO_LED_WORDS = ['마이크로 LED', 'micro LED', '마이크로 발광 다이오드', '마이크로 엘이디'];
 const MICRO_LED_CHIP = '마이크로LED 칩';
+// 방식 코드도 방식 키워드도 없을 때 구동 회로 IPC로 1차를 정한다 (v0.5.6, 2026-11-22 1차 채점)
+// 회로 특허는 명칭이 "표시 장치"처럼 일반적이라 공통으로 갔는데, 공통 표본 20건 중 OLED 전용 회로가 6건이었다
+// - G09G 3/30·3/32 계열(전계발광 구동) → OLED, 본문에 마이크로LED 말이 있으면 마이크로LED
+// - G09G 3/36(액정 구동) → LCD. G09G 3/34(별도 광원)는 전자종이도 포함해서 단독으로는 보지 않고,
+//   3/32와 함께 붙었을 때만 백라이트 LED 구동으로 보고 LCD로 정한다
+// - 둘 다 있으면 정하지 않는다(공통)
+const EL_DRIVE = /^G09G 3\/3[02]/;
+const LCD_DRIVE = /^G09G 3\/36/;
+function level1ByDriveCode(ipcCodes, hasMicroLed) {
+  const el = ipcCodes.some((c) => EL_DRIVE.test(c));
+  const lcd = ipcCodes.some((c) => LCD_DRIVE.test(c));
+  if (lcd && !el) return 'LCD';
+  if (el && ipcCodes.some((c) => /^G09G 3\/34/.test(c))) return 'LCD'; // 백라이트 LED 구동
+  if (el && !lcd) return hasMicroLed ? '마이크로LED' : 'OLED';
+  return null;
+}
 // 1차가 공통일 때 2·3차에 맞춰 1차를 바꾼다 (4-1의 4)
 const LCD_LEVEL3 = ['액정 셀·배향', '백라이트·도광판'];
 const DEVICE = '소자';
@@ -114,7 +130,7 @@ function topByScore(doc, groups, { allowTie = true, skipCommon = false } = {}) {
   return tied && !allowTie ? null : top;
 }
 
-function loadCriteria(version = CRITERIA_VERSION) {
+export function loadCriteria(version = CRITERIA_VERSION) {
   const ipc = db.prepare('SELECT ipc_prefix, level1, level2, level3 FROM ipc_map WHERE criteria_version = ? ORDER BY rowid').all(version);
   const keywords = db.prepare('SELECT level1, level2, level3, keyword, requires FROM keyword_map WHERE criteria_version = ? ORDER BY rowid').all(version);
   const tags = db.prepare('SELECT tag, keyword, ipc_prefix FROM tag_map WHERE criteria_version = ? ORDER BY rowid').all(version);
@@ -305,7 +321,7 @@ function level2ByAllIpc(mappedCodes, ipcRowsOf, doc, criteria) {
  * 특허 하나를 판정한다.
  * @returns {{ rows: object[], tags: string[] }} rows의 첫 행이 주분류, 나머지가 부분류
  */
-function classifyPatent({ ipcCodes, title, abstract, claims = [] }, criteria) {
+export function classifyPatent({ ipcCodes, title, abstract, claims = [] }, criteria) {
   const doc = {
     title: normalize(title),
     body: normalize(`${abstract ?? ''} ${claims.join(' ')}`),
@@ -313,7 +329,7 @@ function classifyPatent({ ipcCodes, title, abstract, claims = [] }, criteria) {
   doc.all = doc.title + doc.body;
   const hasMicroLed = criteria.microWords.some((w) => doc.all.includes(w));
 
-  // 4-1. 1차: 모든 IPC 중 먼저 나온 방식 코드 → 없으면 방식 키워드 → 그래도 없으면 공통
+  // 4-1. 1차: 모든 IPC 중 먼저 나온 방식 코드 → 없으면 방식 키워드 → 없으면 구동 회로 IPC → 그래도 없으면 공통
   // 마이크로LED 코드는 본문에 "마이크로 LED"가 있을 때만 인정한다. 아니면 건너뛰어 G02F 1/13이 있으면 LCD, 없으면 공통이 된다
   let level1 = null;
   for (const code of ipcCodes) {
@@ -323,7 +339,7 @@ function classifyPatent({ ipcCodes, title, abstract, claims = [] }, criteria) {
     level1 = match.level1;
     break;
   }
-  level1 ??= topByScore(doc, criteria.level1Keywords, { allowTie: false }) ?? COMMON;
+  level1 ??= topByScore(doc, criteria.level1Keywords, { allowTie: false }) ?? level1ByDriveCode(ipcCodes, hasMicroLed) ?? COMMON;
 
   const ipcRowsOf = (code) => longestMatches(code, criteria.level2Ipc);
   const level2NamesOf = (code) => {
@@ -335,9 +351,17 @@ function classifyPatent({ ipcCodes, title, abstract, claims = [] }, criteria) {
     : names[0] ?? null);
   // 4-4. 3차: 키워드 → 그 2차를 정한 IPC의 3차 힌트 → 기타
   // 3차도 "액정" 같은 흔한 말은 세지 않는다 (v0.4.5: 도광판·컬러필터 특허가 "액정" 때문에 액정 셀로 가던 문제)
-  const level3Of = (level2, code) => topByScore(doc, criteria.level3ByLevel2.get(level2) ?? [], { skipCommon: true })
-    ?? (code ? ipcRowsOf(code).find((r) => r.level2 === level2 && r.level3)?.level3 : null)
-    ?? `기타 ${level2}`;
+  // level3_basis: 키워드 / IPC / 기타. IPC로 정한 3차는 화면에서 'IPC 추정'으로 표시한다 (2026-11 담당자님 피드백)
+  // level3Check: 키워드 3차와 IPC 힌트를 둘 다 남겨 IPC 규칙별 정확도를 잰다 (scripts/ipc-level3-check.js)
+  let level3Check = null;
+  const level3Of = (level2, code) => {
+    const keyword = topByScore(doc, criteria.level3ByLevel2.get(level2) ?? [], { skipCommon: true });
+    const hint = code ? ipcRowsOf(code).find((r) => r.level2 === level2 && r.level3) : null;
+    level3Check = { level2, keyword, ipc: hint?.level3 ?? null, prefix: hint?.ipc_prefix ?? null };
+    if (keyword) return { level3: keyword, level3_basis: '키워드' };
+    if (hint) return { level3: hint.level3, level3_basis: 'IPC' };
+    return { level3: `기타 ${level2}`, level3_basis: '기타' };
+  };
 
   // 대응표에 있는 IPC가 하나도 없으면 디스플레이와 무관할 수 있어 방법 판정도 하지 않는다 (로봇 아암 같은 오분류 방지)
   const mappedCodes = ipcCodes.filter((c) => ipcRowsOf(c).length);
@@ -353,14 +377,14 @@ function classifyPatent({ ipcCodes, title, abstract, claims = [] }, criteria) {
     // 4-2. 방법 판정: 공정·회로 안의 키워드로 3차, 안 맞으면 기타
     // 3차 키워드가 없으면 같은 2차를 가리키는 IPC의 3차 힌트를 쓴다 (v0.2.6, 예: H01L 21 → TFT 공정)
     const hintCode = mappedCodes.find((c) => ipcRowsOf(c).some((r) => r.level2 === method.level2 && r.level3));
-    primary = { level2: method.level2, level3: level3Of(method.level2, hintCode), basis: method.basis, basis_detail: method.detail };
+    primary = { level2: method.level2, ...level3Of(method.level2, hintCode), basis: method.basis, basis_detail: method.detail };
   } else if (mappedCodes.length) {
     // 4-3. 2차: 모든 IPC의 점수를 더해 가장 높은 2차 (v0.2.2)
     const { level2, code, keywordDecided, margin, ranked } = level2ByAllIpc(mappedCodes, ipcRowsOf, doc, criteria);
-    primary = { level2, level3: level3Of(level2, code), basis: keywordDecided ? '키워드' : 'IPC', basis_detail: code };
+    primary = { level2, ...level3Of(level2, code), basis: keywordDecided ? '키워드' : 'IPC', basis_detail: code };
     doubt = { margin, candidates: ranked };
   } else {
-    primary = { level2: UNCLASSIFIED, level3: null, basis: UNCLASSIFIED, basis_detail: ipcCodes[0] ?? null };
+    primary = { level2: UNCLASSIFIED, level3: null, level3_basis: null, basis: UNCLASSIFIED, basis_detail: ipcCodes[0] ?? null };
   }
 
   // 4-1의 4. 1차가 공통이면 2·3차에 맞춘다
@@ -379,14 +403,14 @@ function classifyPatent({ ipcCodes, title, abstract, claims = [] }, criteria) {
     const name = pickLevel2(level2NamesOf(code));
     if (!name || seen.has(name)) continue;
     seen.add(name);
-    rows.push({ level1, level2: name, level3: null, is_primary: 0, basis: 'IPC', basis_detail: code });
+    rows.push({ level1, level2: name, level3: null, level3_basis: null, is_primary: 0, basis: 'IPC', basis_detail: code });
   }
 
   // 7장. 응용 태그: 명칭·초록 키워드 또는 IPC (여러 개 가능)
   const tags = new Set(criteria.tagKeywords.filter((g) => score(doc, g.keywords) > 0).map((g) => g.name));
   for (const t of criteria.tagIpc) if (ipcCodes.some((c) => matchesPrefix(c, t.ipc_prefix))) tags.add(t.tag);
 
-  return { rows, tags: [...tags], ...doubt };
+  return { rows, tags: [...tags], level3Check, ...doubt };
 }
 
 /** 대응표가 채워져 있는지 (npm run classify를 아직 안 돌린 DB에서는 새로고침 때 분류를 건너뛴다) */
@@ -418,8 +442,8 @@ export function classifyPatents({ numbers = null, version = CRITERIA_VERSION } =
   const deleteTags = db.prepare('DELETE FROM application_tags WHERE application_number = ? AND criteria_version = ?');
   const insertIpc = db.prepare('INSERT INTO patent_ipc (application_number, ipc_code, seq) VALUES (?, ?, ?)');
   const insertResult = db.prepare(`
-    INSERT INTO classification (application_number, level1, level2, level3, is_primary, basis, basis_detail, criteria_version)
-    VALUES (@application_number, @level1, @level2, @level3, @is_primary, @basis, @basis_detail, @criteria_version)
+    INSERT INTO classification (application_number, level1, level2, level3, level3_basis, is_primary, basis, basis_detail, criteria_version)
+    VALUES (@application_number, @level1, @level2, @level3, @level3_basis, @is_primary, @basis, @basis_detail, @criteria_version)
   `);
   const insertTag = db.prepare('INSERT INTO application_tags (application_number, tag, criteria_version) VALUES (?, ?, ?)');
 

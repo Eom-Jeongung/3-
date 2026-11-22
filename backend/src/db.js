@@ -123,6 +123,8 @@ function migrate() {
   const colsOf = (table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
   if (!colsOf('patents').includes('big_drawing_url')) db.exec('ALTER TABLE patents ADD COLUMN big_drawing_url TEXT');
   if (!colsOf('classification').includes('basis_detail')) db.exec('ALTER TABLE classification ADD COLUMN basis_detail TEXT');
+  // 3차를 키워드로 정했는지 IPC로 추정했는지 (2026-11, 'IPC 추정' 표시와 필터)
+  if (!colsOf('classification').includes('level3_basis')) db.exec('ALTER TABLE classification ADD COLUMN level3_basis TEXT');
   if (!colsOf('ipc_map').includes('level3')) db.exec('ALTER TABLE ipc_map ADD COLUMN level3 TEXT');
   if (!colsOf('keyword_map').includes('requires')) db.exec('ALTER TABLE keyword_map ADD COLUMN requires TEXT');
   allowChinaType();

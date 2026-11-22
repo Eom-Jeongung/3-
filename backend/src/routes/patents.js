@@ -22,7 +22,7 @@ const router = Router();
 
 /** 목록·CSV 내려받기가 같이 쓰는 필터와 정렬. 잘못된 값이면 { error } */
 function buildQuery(query) {
-  const { applicant_type, status, q, level1, level2, level3, sort = 'open_date', order = 'desc' } = query;
+  const { applicant_type, status, q, level1, level2, level3, estimate, sort = 'open_date', order = 'desc' } = query;
   const where = [];
   const params = {};
 
@@ -52,11 +52,14 @@ function buildQuery(query) {
   }
   // 기술 분야 필터: 분류 결과는 원본과 분리된 classification 테이블에 있다
   const levels = Object.entries({ level1, level2, level3 }).filter(([, v]) => v);
-  if (levels.length) {
+  // IPC 추정 필터 (2026-11 담당자님 피드백): exclude = 3차를 IPC로 추정한 특허 빼기, only = 그 특허만
+  if (estimate && !['exclude', 'only'].includes(estimate)) return { error: 'estimate는 exclude, only 중 하나' };
+  const estimateSql = { exclude: "AND (level3_basis IS NULL OR level3_basis <> 'IPC')", only: "AND level3_basis = 'IPC'" }[estimate] ?? '';
+  if (levels.length || estimateSql) {
     // 특허마다 분류 테이블을 다시 뒤지는 EXISTS는 2·3차를 고르면 서버가 멈출 만큼 느려서, 맞는 출원번호를 먼저 한 번만 추린다
     where.push(`application_number IN (
       SELECT application_number FROM classification
-      WHERE ${CURRENT_CLASSIFICATION} ${levels.map(([k]) => `AND ${k} = @${k}`).join(' ')}
+      WHERE ${CURRENT_CLASSIFICATION} ${levels.map(([k]) => `AND ${k} = @${k}`).join(' ')} ${estimateSql}
     )`);
     for (const [k, v] of levels) params[k] = v;
   }
@@ -75,7 +78,7 @@ function buildQuery(query) {
 }
 
 // GET /api/patents?applicant_type=own|competitor|china&status=등록,공개&q=검색어&open_from=2025-01-01&open_to=2025-12-31
-//                  &level1=OLED&level2=설계&level3=화소 회로&sort=open_date&order=desc&limit=10&offset=0
+//                  &level1=OLED&level2=설계&level3=화소 회로&estimate=exclude|only&sort=open_date&order=desc&limit=10&offset=0
 router.get('/', (req, res) => {
   const built = buildQuery(req.query);
   if (built.error) return res.status(400).json({ error: built.error });
@@ -91,7 +94,7 @@ router.get('/', (req, res) => {
   `).all({ ...params, limit, offset });
 
   // 목록의 분류 근거 칸 (주분류)
-  const classificationOf = db.prepare(`SELECT level1, level2, level3, basis FROM classification WHERE application_number = ? AND ${CURRENT_CLASSIFICATION}`);
+  const classificationOf = db.prepare(`SELECT level1, level2, level3, level3_basis, basis FROM classification WHERE application_number = ? AND ${CURRENT_CLASSIFICATION}`);
   for (const item of items) item.classification = classificationOf.get(item.application_number) ?? null;
 
   const { n: total } = db.prepare(`SELECT COUNT(*) n FROM patents ${whereSql}`).get(params);
@@ -114,6 +117,7 @@ router.get('/', (req, res) => {
 // 엑셀에서 한글이 깨지지 않게 맨 앞에 BOM을 붙인다. 너무 큰 파일이 되지 않게 EXPORT_MAX건까지만
 const EXPORT_MAX = 20000;
 const TYPE_LABELS = { own: '자사(LG디스플레이)', competitor: '삼성디스플레이', china: '중국 4사' };
+const LEVEL3_BASIS_LABELS = { 키워드: '키워드', IPC: 'IPC 추정', 기타: '기타' };
 const csvCell = (v) => {
   const s = v == null ? '' : String(v);
   return /[",\n\r]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s;
@@ -129,13 +133,13 @@ router.get('/export.csv', (req, res) => {
            registration_date, register_number, legal_status, ipc_codes
     FROM patents ${whereSql} ORDER BY ${orderBy} LIMIT ${EXPORT_MAX}
   `).all(params);
-  const classificationOf = db.prepare(`SELECT level1, level2, level3, basis FROM classification WHERE application_number = ? AND ${CURRENT_CLASSIFICATION}`);
+  const classificationOf = db.prepare(`SELECT level1, level2, level3, level3_basis, basis FROM classification WHERE application_number = ? AND ${CURRENT_CLASSIFICATION}`);
   for (const r of rows) Object.assign(r, classificationOf.get(r.application_number));
-  const header = ['출원번호', '발명의 명칭', '출원인', '구분', '출원일', '공개일', '등록일', '등록번호', '상태', 'IPC', '1차 분류', '2차 분류', '3차 분류', '분류 근거'];
+  const header = ['출원번호', '발명의 명칭', '출원인', '구분', '출원일', '공개일', '등록일', '등록번호', '상태', 'IPC', '1차 분류', '2차 분류', '3차 분류', '3차 근거', '분류 근거'];
   const lines = rows.map((r) => [
     formatAppNo(r.application_number), r.title, r.applicant_name, TYPE_LABELS[r.applicant_type] ?? r.applicant_type,
     r.application_date, r.open_date, r.registration_date, r.register_number, r.legal_status,
-    (r.ipc_codes ?? '').replaceAll('|', ' '), r.level1, r.level2, r.level3, r.basis,
+    (r.ipc_codes ?? '').replaceAll('|', ' '), r.level1, r.level2, r.level3, LEVEL3_BASIS_LABELS[r.level3_basis] ?? '', r.basis,
   ].map(csvCell).join(','));
   const today = new Date().toISOString().slice(0, 10);
   res.set('Content-Type', 'text/csv; charset=utf-8');
@@ -147,7 +151,7 @@ router.get('/export.csv', (req, res) => {
 // 코드에 분야 이름을 두지 않고 분류 결과에서 그대로 읽는다 (분류 기준이 바뀌어도 화면을 고칠 필요가 없음)
 router.get('/filter-options', (req, res) => {
   const classification = db.prepare(`
-    SELECT level1, level2, level3, COUNT(*) n FROM classification
+    SELECT level1, level2, level3, COUNT(*) n, SUM(level3_basis = 'IPC') estimated FROM classification
     WHERE ${CURRENT_CLASSIFICATION}
     GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
   `).all();
@@ -204,7 +208,7 @@ router.get('/:id', (req, res) => {
   const row = db.prepare('SELECT * FROM patents WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: '특허를 찾을 수 없습니다' });
   const classification = db.prepare(`
-    SELECT level1, level2, level3, is_primary, basis, basis_detail, criteria_version FROM classification
+    SELECT level1, level2, level3, level3_basis, is_primary, basis, basis_detail, criteria_version FROM classification
     WHERE application_number = ? AND criteria_version = (SELECT MAX(criteria_version) FROM classification)
     ORDER BY is_primary DESC, id
   `).all(row.application_number);

@@ -15,6 +15,7 @@ const queryOf = (filters, sort) => {
   for (const level of ['level1', 'level2', 'level3']) {
     if (filters[level]) q[level] = filters[level]
   }
+  if (filters.estimate) q.estimate = filters.estimate
   return q
 }
 

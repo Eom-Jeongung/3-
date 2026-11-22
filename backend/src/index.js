@@ -11,8 +11,18 @@ import summariesRouter from './routes/summaries.js';
 import { startScheduler } from './scheduler.js';
 import { warmUpEmerging } from './emerging.js';
 import { siteAuth } from './siteAuth.js';
+import { hasCriteria, seedCriteria, classifyPatents, CRITERIA_VERSION } from './classification.js';
 
 initSchema();
+
+// 분류 기준(CRITERIA_VERSION)을 올린 코드가 처음 켜질 때(배포 직후) 새 기준의 결과가 없으면 전체를 다시 분류한다
+// 이걸 안 하면 콘솔에서 npm run classify를 돌리기 전까지 화면의 건수가 모두 0으로 보인다. 약 10초, KIPRIS·AI 호출 없음
+if (!hasCriteria()) {
+  const started = Date.now();
+  seedCriteria();
+  const n = classifyPatents();
+  console.log(`[분류] 기준 ${CRITERIA_VERSION} 결과가 없어 ${n.toLocaleString()}건을 다시 분류함 (${((Date.now() - started) / 1000).toFixed(1)}초)`);
+}
 
 const app = express();
 

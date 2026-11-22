@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS classification (
   level1             TEXT NOT NULL,                     -- 1차: 디스플레이 방식
   level2             TEXT NOT NULL,                     -- 2차: 기술 영역 (못 정하면 '미분류')
   level3             TEXT,                              -- 3차: 세부 기술 (부분류·미분류는 NULL)
+  level3_basis       TEXT,                              -- 3차 근거 (키워드 / IPC / 기타). IPC는 화면에서 'IPC 추정'
   is_primary         INTEGER NOT NULL DEFAULT 1,        -- 주분류 1, 부분류 0
   basis              TEXT NOT NULL,                     -- 근거 (IPC / 키워드 / 청구항 / 명칭 / 미분류)
   basis_detail       TEXT,                              -- 근거가 된 IPC 코드, 또는 방법 판정 내용 (화면 표시용)

@@ -9,7 +9,14 @@ const APPLICANT_TYPES = [
 
 const SEARCH_DELAY_MS = 300 // 글자를 칠 때마다 요청하지 않도록 잠깐 기다린다
 
-export const EMPTY_FILTERS = { applicantType: '', statuses: [], q: '', openFrom: '', openTo: '', level1: '', level2: '', level3: '' }
+export const EMPTY_FILTERS = { applicantType: '', statuses: [], q: '', openFrom: '', openTo: '', level1: '', level2: '', level3: '', estimate: '' }
+
+// 3차 근거 필터: IPC 추정 = 키워드가 없어 IPC 코드로 3차를 정한 특허 (2026-11 담당자님 피드백)
+const ESTIMATE_OPTIONS = [
+  { value: '', label: '전체' },
+  { value: 'exclude', label: 'IPC 추정 제외' },
+  { value: 'only', label: 'IPC 추정만' },
+]
 
 const uniqueValues = (rows, key) => [...new Set(rows.map((r) => r[key]).filter(Boolean))]
 
@@ -40,6 +47,8 @@ export default function FilterBar({ filters, onChange, statuses, classification 
     { key: 'level3', label: '3차', options: uniqueValues(level3Rows, 'level3'), reset: {} },
   ]
   const noClassification = classification.length === 0
+  // 지금 고른 분야 안에서 IPC 추정 건수 (3차까지 골랐으면 그 3차만)
+  const estimatedCount = level3Rows.filter((r) => !filters.level3 || r.level3 === filters.level3).reduce((n, r) => n + (r.estimated ?? 0), 0)
 
   const hasActiveFilters = JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS)
 
@@ -144,6 +153,22 @@ export default function FilterBar({ filters, onChange, statuses, classification 
           </select>
         ))}
         {noClassification && <span className="filter-note">분류 작업이 끝나면 선택할 수 있어요</span>}
+      </div>
+
+      <div className="filter-group">
+        <span className="filter-label" title="키워드로 3차를 정하지 못해 IPC 코드로 3차를 추정한 특허 (표본 채점에서 75% 이상 맞은 IPC 규칙만 사용)">3차 근거</span>
+        {ESTIMATE_OPTIONS.map((o) => (
+          <button
+            key={o.value}
+            className={`chip ${filters.estimate === o.value ? 'active' : ''}`}
+            aria-pressed={filters.estimate === o.value}
+            disabled={noClassification}
+            onClick={() => onChange({ ...filters, estimate: o.value })}
+          >
+            {o.label}
+            {o.value === 'only' && <span className="chip-count">{estimatedCount.toLocaleString('ko-KR')}</span>}
+          </button>
+        ))}
       </div>
 
       {hasActiveFilters && <button className="filter-reset" onClick={() => onChange(EMPTY_FILTERS)}>필터 초기화</button>}

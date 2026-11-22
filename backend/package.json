@@ -9,6 +9,7 @@
     "collect": "node --env-file-if-exists=.env scripts/collect-full.js",
     "collect-china": "node --env-file-if-exists=.env scripts/collect-china.js",
     "classify": "node --env-file-if-exists=.env scripts/run-classify.js",
+    "ipc-check": "node --env-file-if-exists=.env scripts/ipc-level3-check.js",
     "ai-usage": "node --env-file-if-exists=.env scripts/ai-usage.js",
     "predev": "node -e \"const fs=require('fs'); if(!fs.existsSync('.env')) fs.writeFileSync('.env','')\"",
     "dev": "node --env-file-if-exists=.env --watch src/index.js",

@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { PAGE_SIZE } from '../hooks/usePatentList.js'
 import { APPLICANT_TYPE_LABELS, formatAppNo } from '../format.js'
+import { EstimateBadge } from './EstimateBadge.jsx'
 
 const COLUMNS = [
   { key: 'application_number', label: '출원번호' },
@@ -100,7 +101,7 @@ export default function PatentTable({ items, total, sort, onSortChange, onSelect
               <td className="mono">{p.open_date ?? '-'}</td>
               <td className="mono" title={p.ipc_codes?.replaceAll('|', ', ')}>{formatIpc(p.ipc_codes)}</td>
               <td title={p.classification ? [p.classification.level1, p.classification.level2, p.classification.level3].filter(Boolean).join(' › ') : undefined}>
-                {p.classification ? <>{p.classification.level3 ?? p.classification.level2} <span className="muted">{p.classification.basis}</span></> : '-'}
+                {p.classification ? <>{p.classification.level3 ?? p.classification.level2} {p.classification.level3_basis === 'IPC' && <EstimateBadge />} <span className="muted">{p.classification.basis}</span></> : '-'}
               </td>
               <td><span className={`status ${STATUS_CLASS[p.legal_status] ?? 'status-dead'}`}>{p.legal_status}</span></td>
             </tr>

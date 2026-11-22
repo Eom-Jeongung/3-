@@ -811,3 +811,6 @@ tbody tr:last-child td { border-bottom: 0; }
 .check-note { margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; background: var(--fill); color: var(--muted); font-size: 13px; }
 .check-note summary { cursor: pointer; }
 .check-note ul { margin: 6px 0 2px; padding-left: 18px; font-size: 12px; }
+
+/* ---- IPC 추정 표시 (3차를 IPC 코드로 정한 특허) ---- */
+.estimate-badge { display: inline-block; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--pending); color: var(--pending); background: var(--pending-soft); font-size: 11px; font-weight: 600; line-height: 1.5; vertical-align: 1px; white-space: nowrap; }

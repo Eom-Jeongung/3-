@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import PatentSummary from './PatentSummary.jsx'
 import { APPLICANT_TYPE_LABELS, formatAppNo, jsonOrThrow } from '../format.js'
+import { EstimateBadge } from './EstimateBadge.jsx'
 
 // 상세 패널: 목록에서 행을 누르면 오른쪽에서 열린다 (GET /api/patents/:id)
 export default function PatentDetail({ id, onClose }) {
@@ -123,7 +124,8 @@ export default function PatentDetail({ id, onClose }) {
             {primary && (
               <>
                 <h3>기술 분야 <span className="muted">· 분류 기준 {primary.criteria_version}</span></h3>
-                <p className="class-path">{[primary.level1, primary.level2, primary.level3].filter(Boolean).join(' › ')}</p>
+                <p className="class-path">{[primary.level1, primary.level2, primary.level3].filter(Boolean).join(' › ')} {primary.level3_basis === 'IPC' && <EstimateBadge />}</p>
+                {primary.level3_basis === 'IPC' && <p className="class-basis">3차는 명칭·초록에 맞는 키워드가 없어 IPC 코드로 추정했어요. 표본 채점에서 75% 이상 맞은 IPC 규칙만 써요</p>}
                 <p className="class-basis">근거: {primary.basis}{primary.basis_detail ? ` (${['명칭', '청구항'].includes(primary.basis) ? primary.basis_detail : `IPC ${primary.basis_detail}`})` : ''}</p>
                 {secondary.length > 0 && (
                   <div className="keywords">
