@@ -11,7 +11,7 @@ import summariesRouter from './routes/summaries.js';
 import { startScheduler } from './scheduler.js';
 import { warmUpEmerging } from './emerging.js';
 import { siteAuth } from './siteAuth.js';
-import { hasCriteria, seedCriteria, classifyPatents, CRITERIA_VERSION } from './classification.js';
+import { hasCriteria, seedCriteria, classifyPatents, removeOtherVersions, CRITERIA_VERSION } from './classification.js';
 
 initSchema();
 
@@ -21,7 +21,9 @@ if (!hasCriteria()) {
   const started = Date.now();
   seedCriteria();
   const n = classifyPatents();
-  console.log(`[분류] 기준 ${CRITERIA_VERSION} 결과가 없어 ${n.toLocaleString()}건을 다시 분류함 (${((Date.now() - started) / 1000).toFixed(1)}초)`);
+  // 예전 버전 결과는 지워서 볼륨을 아낀다 (지운 자리는 SQLite가 다음 저장 때 다시 쓴다)
+  const removed = removeOtherVersions();
+  console.log(`[분류] 기준 ${CRITERIA_VERSION} 결과가 없어 ${n.toLocaleString()}건을 다시 분류하고 예전 결과 ${removed.toLocaleString()}행을 지움 (${((Date.now() - started) / 1000).toFixed(1)}초)`);
 }
 
 const app = express();

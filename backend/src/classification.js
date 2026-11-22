@@ -4,7 +4,9 @@
 import fs from 'node:fs';
 import { db } from './db.js';
 
-export const CRITERIA_VERSION = 'v0.5.6'; // v0.5.6: IPC 3차 힌트를 표본 채점(75% 이상)한 9개만 남김, 3차 근거(level3_basis) 저장, 1차에 '전계발광' 키워드와 구동 회로 IPC 추가 (2026-11-22)
+// v0.5.6: IPC 3차 힌트 9개만, 3차 근거 저장, 1차 '전계발광'·구동 회로 IPC (2026-11-22)
+// v0.5.7: 2차 — 봉지 코드는 봉지 말이 없으면 넓게, 윈도우·스퍼터·성형·기판 처리·가요성 회로·광원 구동 키워드 (2026-11-22)
+export const CRITERIA_VERSION = 'v0.5.7';
 export const UNCLASSIFIED = '미분류';
 const COMMON = '공통';
 const TITLE_WEIGHT = 3; // 명칭에 나온 키워드는 초록·청구항보다 3배로 센다 (4-4)
@@ -229,6 +231,11 @@ const BROAD_IPC_WEIGHT = 0.5;   // 넓은 규칙은 내용을 잘 못 알려준�
 // H10K 59/80(구조 세부)은 OLED 특허 대부분에 붙는 포괄 코드라 넓은 규칙으로 본다 (v0.3.6, TFT 코드 재배치 후 다시 시험)
 // H10K 59/12는 "AMOLED 일반"이라 TFT 발명을 뜻하지 않는다 (v0.3.7)
 const BROAD_SUBGROUPS = ['G02F 1/13', 'G02F 1/133', 'G02F 1/1333', 'H10K 59/80', 'H10K 59/12']; // (v0.5.0 시험: 59/121까지 넓게 보면 OLED 특허가 TFT로 몰려 되돌림)
+// H10K 50/84 계열(봉지·용기)은 커버·보호 필름·지지 부재 같은 기구 특허에도 붙는다. 이 코드로 소자가 된 913건 중 506건은
+// 봉지·밀봉·투습 같은 말이 아예 없었다 (v0.5.6, 2026-11-22). 그런 말이 없을 때만 넓은 규칙으로 보고 키워드가 판단하게 한다
+// (모두 넓게 보면 TFT 코드가 여러 개 붙은 진짜 봉지 특허가 설계로 밀려났다)
+const SEAL_PREFIXES = ['H10K 50/84', 'H10K 50/842', 'H10K 50/844'];
+const SEAL_WORDS = ['봉지', '밀봉', '투습', '침투', '실링', '씰링', '실런트', '봉합'].map((w) => w.replace(/\s+/g, '').toUpperCase());
 // 그룹까지만 적혀 있어도 내용이 분명한 코드 (장비·증착·검사·소재·3D): 넓은 규칙으로 보지 않는다 (v0.2.8)
 // 예: "질소 레벨 센서"(G02F 1/13, H10P 72/00) — H10P를 넓게 보면 명칭의 "센서" 하나로 터치·센서가 된다
 const SPECIFIC_GROUPS = ['H10P', 'H10P 72', 'B65G', 'C23C 14', 'C23C 16', 'G03F 7', 'B41J 2', 'G01N 21', 'H04N 13', 'F21V', 'C09K 11', 'C09K 19', 'C07D', 'C07F', 'C07C', 'H10K 85', 'G03F 1', 'B65H', 'B65D', 'B05C', 'C03B 23', 'G06T 5'];
@@ -239,7 +246,7 @@ const KEYWORD_CAP = 2;          // 키워드가 IPC를 완전히 뒤집지는 �
 const COMMON_WORDS = ['액정', '표시 영역', '배선'].map(normalize);
 
 const TITLE_TOPICS = [
-  ['터치', '설계'], ['지문', '설계'], ['커버 윈도우', '기구'], ['폴더블', '기구'], ['롤러블', '기구'],
+  ['터치', '설계'], ['지문', '설계'], ['커버 윈도우', '기구'], ['윈도우', '기구'], ['폴더블', '기구'], ['롤러블', '기구'],
   ['스트레처블', '기구'], ['스트레쳐블', '기구'], ['편광', '광학'], ['렌즈', '설계'],
   ['화합물', '재료'], ['조성물', '재료'], ['소자용 재료', '재료'], ['발광 재료', '재료'],
 ].map(([w, l2]) => [normalize(w), l2]);
@@ -265,7 +272,8 @@ function level2ByAllIpc(mappedCodes, ipcRowsOf, doc, criteria) {
   mappedCodes.forEach((code, i) => {
     const rows = ipcRowsOf(code);
     const names = [...new Set(rows.map((r) => r.level2))];
-    const base = (i === 0 ? FIRST_IPC_WEIGHT : OTHER_IPC_WEIGHT) * (isBroadRule(rows[0].ipc_prefix) ? BROAD_IPC_WEIGHT : 1) / names.length;
+    const broad = isBroadRule(rows[0].ipc_prefix) || (SEAL_PREFIXES.includes(rows[0].ipc_prefix) && !SEAL_WORDS.some((w) => doc.all.includes(w)));
+    const base = (i === 0 ? FIRST_IPC_WEIGHT : OTHER_IPC_WEIGHT) * (broad ? BROAD_IPC_WEIGHT : 1) / names.length;
     for (const name of names) {
       // 같은 2차를 가리키는 두 번째 IPC부터는 절반만 센다 (v0.3.1)
       // OLED 특허는 TFT 코드(H10K 59/121·123·124…)가 여러 개 붙어 개수만으로 TFT 소자가 되는 일이 많았다
@@ -411,6 +419,13 @@ export function classifyPatent({ ipcCodes, title, abstract, claims = [] }, crite
   for (const t of criteria.tagIpc) if (ipcCodes.some((c) => matchesPrefix(c, t.ipc_prefix))) tags.add(t.tag);
 
   return { rows, tags: [...tags], level3Check, ...doubt };
+}
+
+/** 지금 기준이 아닌 예전 버전의 분류 결과를 지운다. 화면·집계는 가장 최신 버전만 읽는다 (버전 하나에 약 35MB) */
+export function removeOtherVersions(version = CRITERIA_VERSION) {
+  const removed = db.prepare('DELETE FROM classification WHERE criteria_version <> ?').run(version).changes;
+  db.prepare('DELETE FROM application_tags WHERE criteria_version <> ?').run(version);
+  return removed;
 }
 
 /** 대응표가 채워져 있는지 (npm run classify를 아직 안 돌린 DB에서는 새로고침 때 분류를 건너뛴다) */
