@@ -127,6 +127,7 @@ function migrate() {
   if (!colsOf('classification').includes('level3_basis')) db.exec('ALTER TABLE classification ADD COLUMN level3_basis TEXT');
   if (!colsOf('ipc_map').includes('level3')) db.exec('ALTER TABLE ipc_map ADD COLUMN level3 TEXT');
   if (!colsOf('keyword_map').includes('requires')) db.exec('ALTER TABLE keyword_map ADD COLUMN requires TEXT');
+  if (!colsOf('keyword_map').includes('level3_only')) db.exec('ALTER TABLE keyword_map ADD COLUMN level3_only INTEGER');
   allowChinaType();
   // 요약을 사람이 만들었는지(manual) 분기 자동 생성(auto)인지
   if (!colsOf('trend_summaries').includes('source')) db.exec("ALTER TABLE trend_summaries ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");

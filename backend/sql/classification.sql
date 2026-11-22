@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS keyword_map (
   keyword          TEXT NOT NULL,
   requires         TEXT,                              -- 이 말 중 하나가 본문에 있을 때만 점수를 준다 ('|'로 구분)
   criteria_version TEXT NOT NULL
+,
+  level3_only        INTEGER                            -- 1이면 3차를 고를 때만 쓰고 2차 점수에는 넣지 않는다 (2026-11)
 );
 CREATE INDEX IF NOT EXISTS idx_keyword_map_version ON keyword_map (criteria_version);
 

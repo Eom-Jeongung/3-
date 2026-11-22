@@ -6,7 +6,8 @@ import { db } from './db.js';
 
 // v0.5.6: IPC 3차 힌트 9개만, 3차 근거 저장, 1차 '전계발광'·구동 회로 IPC (2026-11-22)
 // v0.5.7: 2차 — 봉지 코드는 봉지 말이 없으면 넓게, 윈도우·스퍼터·성형·기판 처리·가요성 회로·광원 구동 키워드 (2026-11-22)
-export const CRITERIA_VERSION = 'v0.5.7';
+// v0.5.8: 3차 키워드 56개 보강(3차 전용 — 2차 점수에는 안 씀), keyword_map.level3_only (2026-11-22)
+export const CRITERIA_VERSION = 'v0.5.8';
 export const UNCLASSIFIED = '미분류';
 const COMMON = '공통';
 const TITLE_WEIGHT = 3; // 명칭에 나온 키워드는 초록·청구항보다 3배로 센다 (4-4)
@@ -64,7 +65,7 @@ function readCsv(name) {
 /** CSV의 기준을 대응표 테이블에 넣는다 (같은 버전은 교체) */
 export function seedCriteria(version = CRITERIA_VERSION) {
   const insertIpc = db.prepare('INSERT INTO ipc_map (ipc_prefix, level1, level2, level3, criteria_version) VALUES (@ipc_prefix, @level1, @level2, @level3, @version)');
-  const insertKeyword = db.prepare('INSERT INTO keyword_map (level1, level2, level3, keyword, requires, criteria_version) VALUES (@level1, @level2, @level3, @keyword, @requires, @version)');
+  const insertKeyword = db.prepare('INSERT INTO keyword_map (level1, level2, level3, keyword, requires, level3_only, criteria_version) VALUES (@level1, @level2, @level3, @keyword, @requires, @level3_only, @version)');
   const insertTag = db.prepare('INSERT INTO tag_map (tag, keyword, ipc_prefix, criteria_version) VALUES (@tag, @keyword, @ipc_prefix, @version)');
   const ipcRows = readCsv('ipc_map.csv');
   const keywordRows = readCsv('keyword_map.csv');
@@ -72,7 +73,7 @@ export function seedCriteria(version = CRITERIA_VERSION) {
   db.transaction(() => {
     for (const table of ['ipc_map', 'keyword_map', 'tag_map']) db.prepare(`DELETE FROM ${table} WHERE criteria_version = ?`).run(version);
     for (const r of ipcRows) insertIpc.run({ level3: null, ...r, version });
-    for (const r of keywordRows) insertKeyword.run({ requires: null, ...r, version });
+    for (const r of keywordRows) insertKeyword.run({ requires: null, ...r, level3_only: r.level3_only === '1' ? 1 : null, version });
     for (const r of tagRows) insertTag.run({ ...r, version });
   })();
   return { ipc: ipcRows.length, keywords: keywordRows.length, tags: tagRows.length };
@@ -134,7 +135,7 @@ function topByScore(doc, groups, { allowTie = true, skipCommon = false } = {}) {
 
 export function loadCriteria(version = CRITERIA_VERSION) {
   const ipc = db.prepare('SELECT ipc_prefix, level1, level2, level3 FROM ipc_map WHERE criteria_version = ? ORDER BY rowid').all(version);
-  const keywords = db.prepare('SELECT level1, level2, level3, keyword, requires FROM keyword_map WHERE criteria_version = ? ORDER BY rowid').all(version);
+  const keywords = db.prepare('SELECT level1, level2, level3, keyword, requires, level3_only FROM keyword_map WHERE criteria_version = ? ORDER BY rowid').all(version);
   const tags = db.prepare('SELECT tag, keyword, ipc_prefix FROM tag_map WHERE criteria_version = ? ORDER BY rowid').all(version);
   const toKeyword = (r) => ({ word: normalize(r.keyword), requires: r.requires ? r.requires.split('|').map(normalize) : null });
   const groupBy = (rows, key) => {
@@ -157,7 +158,8 @@ export function loadCriteria(version = CRITERIA_VERSION) {
     level2Ipc: ipc.filter((r) => r.level2),
     level2Order: [...new Set(ipc.filter((r) => r.level2).map((r) => r.level2))],
     level1Keywords: groupBy(keywords.filter((k) => k.level1), 'level1'),
-    level2Keywords: groupBy(keywords.filter((k) => k.level2), 'level2'),
+    // 3차 전용 키워드(level3_only)는 2차 점수에 넣지 않는다. 여러 분야 특허에 두루 나오는 말(데이터 라인·정전기 등)이 2차를 끌고 가서 (v0.5.7)
+    level2Keywords: groupBy(keywords.filter((k) => k.level2 && !k.level3_only), 'level2'),
     level3ByLevel2,
     tagKeywords: groupBy(tags.filter((t) => t.keyword), 'tag'),
     tagIpc: tags.filter((t) => t.ipc_prefix),
