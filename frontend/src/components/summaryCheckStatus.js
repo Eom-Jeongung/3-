@@ -1,7 +1,7 @@
 export const CHECKS = [
   ['statMismatches', '회사·분야·연도별 통계 불일치'],
   ['statUnverified', '통계 수치의 맥락을 확인할 수 없음'],
-  ['evidenceWarnings', '확인이 필요한 줄 (본문에 표시)'],
+  ['evidenceWarnings', '주의 표시한 줄 (본문에 이유 표시)'],
   ['foreignText', '한국어가 아닌 글자가 섞인 문장'],
   ['strangeNumbers', '자료에 없는 숫자'],
   ['strangePatents', '근거 목록에 없는 출원번호'],

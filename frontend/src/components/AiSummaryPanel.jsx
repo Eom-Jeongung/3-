@@ -19,15 +19,23 @@ function Inline({ text, evidence, onOpen }) {
 }
 
 // 서버 검사가 줄 앞에 붙인 표시 (backend/src/summaryEvidence.js FLAGS와 같게)
-const LINE_FLAGS = { '숫자 다름': 'flag-mismatch', '확인 필요': 'flag-check', '다른 언어': 'flag-foreign' }
+// '확인 필요'는 2026-11-23 팀 회의로 '주의'로 바꿨다. 이전에 저장된 요약도 '주의'로 보여 준다
+const LINE_FLAGS = { '숫자 다름': 'flag-mismatch', '주의': 'flag-check', '다른 언어': 'flag-foreign' }
 function splitFlag(text) {
-  const m = text.match(/^\[(숫자 다름|확인 필요|다른 언어)\]\s*/)
-  return m ? { flag: m[1], rest: text.slice(m[0].length) } : { flag: null, rest: text }
+  const m = text.match(/^\[(숫자 다름|확인 필요|주의|다른 언어)\]\s*/)
+  return m ? { flag: m[1] === '확인 필요' ? '주의' : m[1], rest: text.slice(m[0].length) } : { flag: null, rest: text }
+}
+// 표시가 붙은 이유: 서버 검사(checks.evidenceWarnings)에서 이 문장을 다룬 항목을 찾는다
+const FLAG_HELP = { '숫자 다름': '자료(DB 통계)와 다른 숫자가 있어요', '주의': '근거를 자동으로 확인하지 못했어요', '다른 언어': '한국어가 아닌 글자가 섞였어요' }
+function flagReason(flag, text, warnings = []) {
+  const plain = text.replace(/\*\*/g, '').trim()
+  const found = plain && warnings.find((w) => typeof w === 'string' && w.includes(plain.slice(0, 40)))
+  return found ? found.replace(plain, '').replace(/[:：]\s*$/, '').trim() || FLAG_HELP[flag] : FLAG_HELP[flag]
 }
 
 // AI 답(마크다운 일부: ## 제목, - 목록, **굵게**)을 화면 요소로
 // "핵심 메시지" 칸(2026-11 담당자님 피드백으로 추가)은 제목 대신 맨 위 강조 띠로 보여 준다. 예전 요약에는 이 칸이 없다
-function SummaryBody({ content, evidence, onOpen }) {
+function SummaryBody({ content, evidence, onOpen, warnings }) {
   const blocks = []
   let list = null
   let headline = false
@@ -44,7 +52,7 @@ function SummaryBody({ content, evidence, onOpen }) {
       blocks.push(
         <p key={blocks.length} className={['ai-headline', flag && `line-flag ${LINE_FLAGS[flag]}`].filter(Boolean).join(' ')}>
           <span className="ai-headline-label">핵심 메시지</span>
-          {flag && <span className="flag-badge" title="자동 검사 표시: 아래 검사 결과와 근거를 확인해 주세요">{flag}</span>}
+          {flag && <span className="flag-badge" title={flagReason(flag, text, warnings)}>{flag}</span>}
           <Inline text={text} evidence={evidence} onOpen={onOpen} />
         </p>,
       )
@@ -55,8 +63,9 @@ function SummaryBody({ content, evidence, onOpen }) {
       const cls = [/^\**해석/.test(text) && 'ai-interpretation', flag && `line-flag ${LINE_FLAGS[flag]}`].filter(Boolean).join(' ')
       list.push(
         <li key={list.length} className={cls || undefined}>
-          {flag && <span className="flag-badge" title="자동 검사 표시: 아래 검사 결과와 근거를 확인해 주세요">{flag}</span>}
+          {flag && <span className="flag-badge" title={flagReason(flag, text, warnings)}>{flag}</span>}
           <Inline text={text} evidence={evidence} onOpen={onOpen} />
+          {flag && <span className="flag-reason">{flagReason(flag, text, warnings)}</span>}
         </li>,
       )
     } else {
@@ -320,7 +329,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
             ? <p className="check-ok">규칙 기반 자동 검사에서 경고를 발견하지 못했어요. 모든 수치와 해석의 정확성을 보장하지 않으니 근거를 확인해 주세요.</p>
             : (
               <div className="check-warn" role="status">
-                <b>자동 검사에서 확인이 필요한 부분이 있어요</b>
+                <b>자동 검사에서 주의할 부분이 있어요</b>
                 {olderChecks && <p>이전에 생성된 요약이라 새 통계·근거 검사가 적용되지 않았어요. 다시 만들면 검사할 수 있어요.</p>}
                 {issues.length > 0 && (
                   <ul>
@@ -344,7 +353,7 @@ export default function AiSummaryPanel({ scope, title = 'AI 동향 요약', onOp
             </details>
           )}
           <div className="ai-summary-body">
-            <SummaryBody content={shownSummary.content} evidence={shownSummary.evidence} onOpen={onOpenPatent} />
+            <SummaryBody content={shownSummary.content} evidence={shownSummary.evidence} onOpen={onOpenPatent} warnings={shownSummary.checks?.evidenceWarnings} />
           </div>
           {shownSummary.evidence?.length > 0 && (
             <details>
