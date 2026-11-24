@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 process.env.DB_PATH = ':memory:';
 const { db } = await import('../src/db.js');
 const { getSummaryStats } = await import('../src/summaryStats.js');
-const { buildSummaryInput, generateTrendSummary, selectSummaryEvidence } = await import('../src/trendSummary.js');
+const { buildSummaryInput, generateTrendSummary, selectSummaryEvidence, SYSTEM_PROMPT, SUMMARY_TASKS, splitSummaryPrompt, combineSummaryParts } = await import('../src/trendSummary.js');
 const { CRITERIA_VERSION } = await import('../src/classification.js');
 
 const fields = ['화소 배열·레이아웃', '패널 구조 설계', '마이크로렌즈·광추출 구조', '마이크로LED 어레이 구조', '터치·센서'];
@@ -255,21 +255,40 @@ test('선택한 범위에 분류된 특허가 없으면 AI를 부르지 않고 �
   }
 });
 
-test('요약 생성 시 구조화 통계를 전달하고 수치 불일치 검사를 저장한다', async () => {
+test('기존 공통 규칙과 모든 출력 항목을 문구 변경 없이 네 프롬프트에 나눈다', () => {
+  const [rules, ...sections] = SYSTEM_PROMPT.split(/(?=^## )/m);
+  const prompts = splitSummaryPrompt();
+  assert.equal(prompts.length, 4);
+  for (const prompt of prompts) assert.ok(prompt.startsWith(rules));
+  for (const section of sections) assert.equal(prompts.filter((prompt) => prompt.includes(section.trimEnd())).length, 1);
+  assert.deepEqual(SUMMARY_TASKS.flat(), ['핵심 메시지', '핵심 흐름', '성장 분야', '경쟁사 동향', '주목 특허', '시사점', '한계']);
+});
+
+test('네 응답은 지정된 기존 항목만 기존 순서로 조합한다', () => {
+  const answers = SUMMARY_TASKS.map((names) => names.map((name) => `## ${name}\n- ${name}`).join('\n'));
+  answers[1] += '\n## 주목 특허\n- 원치 않는 항목';
+  const answer = combineSummaryParts(answers);
+  assert.deepEqual([...answer.matchAll(/^## (.+)$/gm)].map((m) => m[1]), SUMMARY_TASKS.flat());
+  assert.doesNotMatch(answer, /원치 않는 항목/);
+});
+
+test('요약 생성 시 네 요청에 구조화 통계를 전달하고 수치 불일치 검사를 저장한다', async () => {
   const originalFetch = globalThis.fetch;
   const oldBase = process.env.AI_BASE_URL;
   const oldModel = process.env.AI_MODEL;
-  let sent;
+  const sent = [];
   process.env.AI_BASE_URL = 'https://example.invalid';
   process.env.AI_MODEL = 'test';
   globalThis.fetch = async (_url, options) => {
-    sent = JSON.parse(options.body);
+    sent.push(JSON.parse(options.body));
     return { ok: true, json: async () => ({ choices: [{ message: { content: `## 핵심 흐름\n- 자사 ${fields[0]} 2022년 41건\n## 성장 분야\n## 경쟁사 동향\n## 주목 특허\n## 한계` } }] }) };
   };
   db.exec('SAVEPOINT generation_test');
   try {
     const result = await generateTrendSummary(scope);
-    assert.ok(sent.messages[1].content.includes('[구조화 통계:'));
+    assert.equal(sent.length, 4);
+    assert.ok(sent.every((request) => request.messages[1].content.includes('[구조화 통계:')));
+    assert.match(sent[3].messages[1].content, /\[앞 칸\][\s\S]*## 핵심 흐름/);
     assert.equal(result.checks.statMismatches.length, 1);
     assert.equal(result.checks.statUnverified.length, 0);
     assert.ok(result.checks.dataWarnings.length);
