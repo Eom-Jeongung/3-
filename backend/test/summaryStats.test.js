@@ -262,13 +262,16 @@ test('각 프롬프트는 담당 항목만 요청하고 수치 정확성 규칙�
     assert.match(prompt, /담당 범위:/);
     assert.match(prompt, /다른 항목의 제목·내용/);
     assert.deepEqual([...prompt.matchAll(/^## (.+)$/gm)].map((m) => m[1].replace(/ \(3줄\)$/, '')), SUMMARY_TASKS[i]);
-    assert.match(prompt, /비중·차이·합계·배율을 새로 계산하지 않는다/);
-    assert.match(prompt, /한 문장에는 한 회사와 한 분야/);
-    assert.match(prompt, /30건 미만/);
+    if (i < 3) {
+      assert.match(prompt, /비중·차이·합계·배율을 새로 계산하지 않는다/);
+      assert.match(prompt, /한 문장에는 한 회사와 한 분야/);
+      assert.match(prompt, /30건 미만/);
+    }
   });
   assert.doesNotMatch(prompts.slice(0, 3).join('\n'), /시사점에는 새 숫자|주목 특허.*4~5건/);
-  assert.doesNotMatch(prompts[3], /핵심 흐름은 정확히 3줄|칸에는 첫해보다|시사점|확인해 볼 점|\[앞 칸\]/);
-  assert.deepEqual(SUMMARY_TASKS.flat(), ['핵심 메시지', '핵심 흐름', '성장 분야', '경쟁사 동향', '주목 특허', '한계']);
+  assert.doesNotMatch(prompts[3], /한계|시사점|확인해 볼 점|\[앞 칸\]/);
+  assert.match(prompts[3], /\[근거 후보 특허\] 전체를 검토하고 대표 특허를 최대 3건/);
+  assert.deepEqual(SUMMARY_TASKS.flat(), ['핵심 메시지', '핵심 흐름', '성장 분야', '경쟁사 동향', '주목 특허']);
 });
 
 test('네 응답은 지정된 기존 항목만 기존 순서로 조합한다', () => {
@@ -277,7 +280,7 @@ test('네 응답은 지정된 기존 항목만 기존 순서로 조합한다', (
   answers[3] += '\n## 시사점 및 제언\n- 원치 않는 시사점\n## 한계와 전망\n- 원치 않는 전망\n### 종합\n- 원치 않는 결론';
   const answer = combineSummaryParts(answers);
   assert.deepEqual([...answer.matchAll(/^## (.+)$/gm)].map((m) => m[1]), SUMMARY_TASKS.flat());
-  assert.doesNotMatch(answer, /원치 않는 항목/);
+  assert.doesNotMatch(answer, /원치 않는/);
 });
 
 test('요약 생성 시 구조화 통계를 전달하고 수치 검사와 최종 저장 길이를 기록한다', async () => {
@@ -285,12 +288,18 @@ test('요약 생성 시 구조화 통계를 전달하고 수치 검사와 최종
   const oldBase = process.env.AI_BASE_URL;
   const oldModel = process.env.AI_MODEL;
   const sent = [];
+  const evidence = buildSummaryInput(scope).evidence;
+  assert.ok(evidence.length > 3);
   process.env.AI_BASE_URL = 'https://example.invalid';
   process.env.AI_MODEL = 'test';
   globalThis.fetch = async (_url, options) => {
     sent.push(JSON.parse(options.body));
-    const longLimitation = '가'.repeat(1650);
-    return { ok: true, json: async () => ({ choices: [{ message: { content: `## 핵심 흐름\n- 자사 ${fields[0]} 2022년 41건\n- 삼성 ${fields[0]} 2022년 41건\n## 성장 분야\n## 경쟁사 동향\n## 주목 특허와 전망\n- 버릴 설명\n## 한계\n- ${longLimitation}\n- 향후 확인할 필요가 있다.\n## 시사점 및 제언\n- 버릴 시사점` } }] }) };
+    const patentLines = evidence.slice(0, 4).map((item) =>
+      `- ${item.number} (${item.company}): 「${item.title}」는 패널에 연결된 전극을 포함한다. (${item.reason})`);
+    const content = sent.length === 4
+      ? ['## 주목 특허', ...patentLines, '## 한계', '- 버릴 한계', '## 시사점 및 제언', '- 버릴 시사점'].join('\n')
+      : `## 핵심 흐름\n- 자사 ${fields[0]} 2022년 41건\n- 삼성 ${fields[0]} 2022년 41건\n## 성장 분야\n- ${'가'.repeat(1650)}\n## 경쟁사 동향`;
+    return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
   };
   db.exec('SAVEPOINT generation_test');
   try {
@@ -298,18 +307,25 @@ test('요약 생성 시 구조화 통계를 전달하고 수치 검사와 최종
     assert.equal(sent.length, 4);
     assert.ok(sent.every((request) => request.messages[1].content.includes('[구조화 통계:')));
     assert.doesNotMatch(sent[3].messages[1].content, /\[앞 칸\]/);
+    for (const { number } of evidence) assert.ok(sent.every((request) => request.messages[1].content.includes(number)));
     assert.equal(result.checks.statMismatches.length, 1);
     assert.equal(result.checks.statUnverified.length, 0);
     assert.ok(result.checks.dataWarnings.length);
-    assert.match(result.content, /30건은 기존 주의 기준/);
+    assert.match(result.content, /연간 30건 미만은 해석에 주의/);
+    assert.match(result.content, /무작위 검증 정확도는 약 85%/);
     assert.match(result.content, /급증 용어는 유사 초록 중복 제거/);
     assert.ok(result.content.length > 1800);
     assert.ok(result.checks.formatIssues.includes(`최종 요약 ${result.content.length}자 (1,800자 이하여야 함)`));
-    assert.deepEqual(result.checks.missingSections, ['핵심 메시지', '주목 특허']);
+    assert.deepEqual(result.checks.missingSections, ['핵심 메시지']);
     assert.deepEqual(result.checks.insightSelection, { pair: 1, company: 0, field: 0, insufficient: 0 });
     assert.match(result.content, /## 시사점\n- 확인해 볼 점: 삼성디스플레이의 화소 배열·레이아웃 출원을 살펴본다\.\n## 한계/);
-    assert.doesNotMatch(result.content, /버릴 설명|버릴 시사점/);
-    assert.ok(result.checks.overreach.some((warning) => warning.includes('한계의 해석·제언 표현 확인 필요')));
+    assert.doesNotMatch(result.content, /버릴 한계|버릴 시사점/);
+    const displayed = result.content.split('## 주목 특허\n')[1].split('\n## 시사점')[0];
+    assert.equal(displayed.split('\n').length, 3);
+    assert.ok(displayed.includes('패널에 연결된 전극을 포함한다.'));
+    assert.ok(!displayed.includes(`「${evidence[0].title}」`));
+    assert.ok(!displayed.includes(evidence[3].number));
+    assert.ok(!result.checks.formatIssues.some((warning) => /한계 안내|주목 특허/.test(warning)));
   } finally {
     db.exec('ROLLBACK TO generation_test');
     db.exec('RELEASE generation_test');

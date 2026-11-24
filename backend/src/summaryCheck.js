@@ -3,6 +3,7 @@
 
 /** 요약의 일곱 칸 (프롬프트와 검사가 함께 쓴다). 핵심 메시지·시사점은 2026-11 담당자님 피드백으로 추가 */
 export const SECTIONS = ['핵심 메시지', '핵심 흐름', '성장 분야', '경쟁사 동향', '주목 특허', '시사점', '한계'];
+export const MAX_NOTABLE_PATENTS = 3;
 
 // 특허 설명에 붙이기 쉬운 효과 말. 그 특허 초록에 없으면 AI가 덧붙인 것
 const EFFECT_WORDS = ['신뢰성', '내구성', '수명', '광효율', '발광 효율', '고해상도', '정밀화', '화질', '시인성', '투과율', '소비전력', '생산성', '수율', '원가', '박형화'];
@@ -24,7 +25,7 @@ const termsOf = (text) => [...new Set((text.match(/[가-힣A-Za-z]{2,}/g) ?? [])
  * @param {string} statText 통계 자료(건수·증감률·비중) 글. 여기 있는 숫자만 "건·%·→" 옆에 올 수 있다
  * @param {{number:string, company:string, fullText:string, field?:string}[]} evidence 근거 특허 (fullText = 명칭 + 초록 전체, field = 3차)
  */
-export function checkSummary(answer, statText, evidence, { finalLength = answer.length } = {}) {
+export function checkSummary(answer, statText, evidence, { finalContent = answer, requiredLimitations = [] } = {}) {
   // 1. 숫자: "건", "%", "→" 옆 숫자는 통계 자료의 값이어야 한다. 그 밖의 숫자는 통계나 근거 특허 글에 있으면 된다
   const statNumbers = new Set(statText.match(/\d+/g) ?? []);
   ['3', '85'].forEach((n) => statNumbers.add(n)); // 형식("3줄")과 한계 문구("약 85%")
@@ -97,7 +98,9 @@ export function checkSummary(answer, statText, evidence, { finalLength = answer.
     });
   }
   // 4. 빠진 칸: 답이 잘렸거나 형식을 안 지킴
-  const missingSections = SECTIONS.filter((h) => !answer.split('\n').some((l) => /^##/.test(l.trim()) && l.includes(h)));
+  const finalHeadings = new Set([...finalContent.matchAll(/^##[ \t]+([^\r\n]+)$/gm)]
+    .map(([, heading]) => heading.trim().replace(/^핵심 흐름 \(3줄\)$/, '핵심 흐름')));
+  const missingSections = SECTIONS.filter((name) => !finalHeadings.has(name));
   // 5. 과한 해석: 회사 의도·산업 단계를 단정하는 말
   const overreach = answer.split('\n').filter((l) => OVERREACH.some((w) => l.includes(w)))
     .map((l) => `${OVERREACH.filter((w) => l.includes(w)).join(', ')}: ${l.replace(/^[-*\s]+/, '').slice(0, 60)}…`);
@@ -111,11 +114,14 @@ export function checkSummary(answer, statText, evidence, { finalLength = answer.
       if (!removeSpacesAndQuotes(inside).includes(removeSpacesAndQuotes(cites[0].reason))) wrongReasons.push(`${cites[0].number}: "${inside}" (실제 선정 이유: ${cites[0].reason})`);
     }
   }
-  // 7. 길이: 한 화면 안에 읽히게 (주목 특허 6건 이하, 전체 1,800자 이하. 핵심 메시지·시사점이 늘어 1,600에서 올림)
+  // 7. 표시 건수, 자동 안내, 전체 길이는 제목과 줄바꿈까지 들어간 최종 저장본에서 확인한다.
   const formatIssues = [];
-  const notable = answer.split(/^##\s*주목 특허.*$/m)[1]?.split(/^##/m)[0] ?? '';
+  const notable = finalContent.split(/^##[ \t]+주목 특허[ \t]*$/m)[1]?.split(/^##[ \t]+/m)[0] ?? '';
   const notableCount = notable.split('\n').filter((l) => /\d{13}/.test(l)).length;
-  if (notableCount > 6) formatIssues.push(`주목 특허 ${notableCount}건 (5건 안팎이어야 함)`);
-  if (finalLength > 1800) formatIssues.push(`최종 요약 ${finalLength}자 (1,800자 이하여야 함)`);
+  if (notableCount > MAX_NOTABLE_PATENTS) formatIssues.push(`주목 특허 ${notableCount}건 (${MAX_NOTABLE_PATENTS}건 이하여야 함)`);
+  const limitationLines = new Set(finalContent.split(/^##[ \t]+한계[ \t]*$/m)[1]?.split(/^##[ \t]+/m)[0].split('\n').map((line) => line.trim()));
+  const missingLimitations = requiredLimitations.filter((line) => !limitationLines.has(line)).length;
+  if (missingLimitations) formatIssues.push(`최종 한계 안내 ${missingLimitations}줄 누락`);
+  if (finalContent.length > 1800) formatIssues.push(`최종 요약 ${finalContent.length}자 (1,800자 이하여야 함)`);
   return { strangeNumbers: [...strangeNumbers], strangePatents, mixups, unsupported, overreach, missingSections, wrongReasons, formatIssues };
 }

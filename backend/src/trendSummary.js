@@ -6,7 +6,7 @@ import { db } from './db.js';
 import { getSummaryStats, MIN_COUNT, UNPUBLISHED_MONTHS } from './summaryStats.js';
 import { chat, isAiConfigured } from './ai.js';
 import { CRITERIA_VERSION } from './classification.js';
-import { checkSummary, SECTIONS } from './summaryCheck.js';
+import { checkSummary, MAX_NOTABLE_PATENTS, SECTIONS } from './summaryCheck.js';
 import { burstTerms } from './emerging.js';
 import { checkStatistics } from './summaryStatCheck.js';
 import { groundInterpretations } from './summaryEvidence.js';
@@ -189,7 +189,7 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
       ...row, year: Number(year), metric: 'count', value: 0,
     })))],
   };
-  return { facts, statText, evidence, structuredStats, validationStats, dataWarnings };
+  return { facts, statText, evidence, structuredStats, validationStats, dataWarnings, incomplete };
 }
 
 /** 공개가 끝난 마지막 연도 (그 해 12월 31일 출원까지 공개가 끝났다고 볼 수 있는 해). 요약 기본 기간의 끝 */
@@ -205,7 +205,7 @@ export const SUMMARY_TASKS = [
   ['핵심 메시지'],
   ['핵심 흐름', '성장 분야'],
   ['경쟁사 동향'],
-  ['주목 특허', '한계'],
+  ['주목 특허'],
 ];
 
 const PROMPT_FILES = ['01_stats.md', '02_timeline.md', '03_competitors.md', '04_evidence.md'];
@@ -233,13 +233,36 @@ export function combineSummaryParts(answers) {
   }).join('\n');
 }
 
+function displayedPatents(section, evidence) {
+  const available = new Map(evidence.map((item) => [item.number, item]));
+  const lines = [];
+  for (const line of section.split('\n').slice(1)) {
+    const item = available.get(line.match(/^- (\d{13}) \(/)?.[1]);
+    if (!item) continue;
+    available.delete(item.number);
+    // 식별자와 기술 문장은 유지하고, 설명 첫머리에 인용된 동일 제목만 덜어낸다.
+    const prefix = `- ${item.number} (${item.company}): `;
+    const title = `「${item.title}」`;
+    const description = line.startsWith(prefix) ? line.slice(prefix.length) : '';
+    const redundant = [`${title}은 `, `${title}는 `].find((start) => description.startsWith(start));
+    lines.push(redundant ? prefix + description.slice(redundant.length) : line);
+    if (lines.length === MAX_NOTABLE_PATENTS) break;
+  }
+  if (!lines.length) {
+    lines.push(evidence.length
+      ? '- 주목 특허의 근거를 확인하지 못했습니다.'
+      : '- 제공된 근거 후보 특허가 없어 주목 특허를 선정하지 않았습니다.');
+  }
+  return ['## 주목 특허', ...lines].join('\n');
+}
+
 const scopeKey = ({ level1 = '', level2 = '', level3 = '' }) => ({ level1: level1 ?? '', level2: level2 ?? '', level3: level3 ?? '' });
 
 /** AI로 요약을 만들고 저장한다. 같은 범위·기간은 새 행으로 쌓인다(이전 요약과 비교할 수 있게) */
 export async function generateTrendSummary({ level1, level2, level3, from, to }, { source = 'manual' } = {}) {
   if (!isAiConfigured()) throw new Error('AI 설정(AI_BASE_URL, AI_MODEL)이 비어 있어요');
   const scope = scopeKey({ level1, level2, level3 });
-  const { facts, statText, evidence, structuredStats, validationStats, dataWarnings } = buildSummaryInput({ ...scope, from, to });
+  const { facts, statText, evidence, structuredStats, validationStats, dataWarnings, incomplete } = buildSummaryInput({ ...scope, from, to });
   // 고른 범위·기간에 분류된 특허가 없으면 AI를 부르지 않는다 (비용을 쓰고 의미 없는 요약이 저장되는 것을 막는다)
   if (structuredStats.values.length === 0) {
     throw Object.assign(new Error('선택한 범위와 기간에 분류된 특허가 없어 요약을 만들 수 없어요'), { status: 422 });
@@ -257,25 +280,26 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
   const sections = readSummarySections(grounded.content);
   const insights = buildSummaryInsights(sections, validationStats);
   sections.set('시사점', insights.text);
-  const missingSections = SECTIONS.filter((name) => !sections.has(name));
+  if (sections.has('주목 특허')) {
+    sections.set('주목 특허', displayedPatents(sections.get('주목 특허'), evidence));
+  }
   const limitations = [
-    ...(dataWarnings.some((warning) => warning.includes(`기존 주의 기준 ${MIN_COUNT}건 미만`)) ? ['- 일부 회사·분야·연도의 출원 건수가 30건 미만이므로 동향 해석에 주의가 필요합니다. 30건은 기존 주의 기준이며 통계적 유의성을 뜻하지 않습니다.'] : []),
-    ...(evidence.length < 4 ? [`- 근거 후보 특허가 ${evidence.length}건으로 부족할 수 있어 기술 동향 판단에 한계가 있습니다.`] : []),
-    '- 출원 건수는 출원번호 기준이며, 급증 용어는 유사 초록 중복 제거 후 문서 수를 기준으로 합니다.',
+    '- 규칙 기반 자동 분류의 무작위 검증 정확도는 약 85%입니다.',
+    '- 출원일·출원번호 기준으로 패밀리·후속 출원을 포함합니다. 급증 용어는 유사 초록 중복 제거 후 문서 수입니다.',
+    '- 경쟁사 비교는 삼성디스플레이·중국 4사(BOE·CSOT·Tianma·Visionox)의 한국 출원 기준입니다.',
+    ...(dataWarnings.some((warning) => warning.includes(`기존 주의 기준 ${MIN_COUNT}건 미만`))
+      ? [`- 연간 ${MIN_COUNT}건 미만은 해석에 주의합니다. 통계적 유의성 기준은 아닙니다.`] : []),
+    ...(incomplete.length ? [`- 출원 후 약 ${UNPUBLISHED_MONTHS}개월의 공개 시차로 최근 연도는 과소집계될 수 있습니다.`] : []),
+    ...(evidence.length < 4 ? [`- 근거 후보 특허가 ${evidence.length}건으로 기술 동향 판단에 한계가 있습니다.`] : []),
   ];
-  const limitationLines = sections.get('한계')?.split('\n').slice(1) ?? [];
-  sections.set('한계', ['## 한계', ...limitations, ...limitationLines].join('\n'));
+  sections.set('한계', ['## 한계', ...limitations].join('\n'));
   const content = SECTIONS.map((name) => sections.get(name)).filter(Boolean).join('\n');
-  const checks = checkSummary(grounded.content, statText, evidence, { finalLength: content.length });
-  checks.missingSections = missingSections;
+  const checks = checkSummary(grounded.content, statText, evidence, { finalContent: content, requiredLimitations: limitations });
   checks.insightSelection = insights.counts;
-  const rawSections = readSummarySections(answer);
   const interpretation = /시사(?:한|하|된|점)|필요(?:가\s*있|하(?:다|며|다는))|전망|예상(?:된|한|하)|바람직/;
-  for (const title of ['주목 특허', '한계']) {
-    const lines = (rawSections.get(title) ?? '').split('\n').slice(1);
-    for (const line of lines.filter((line) => interpretation.test(line))) {
-      checks.overreach.push(`${title}의 해석·제언 표현 확인 필요: ${line.trim().slice(0, 90)}`);
-    }
+  const patentLines = (readSummarySections(answer).get('주목 특허') ?? '').split('\n').slice(1);
+  for (const line of patentLines.filter((line) => interpretation.test(line))) {
+    checks.overreach.push(`주목 특허의 해석·제언 표현 확인 필요: ${line.trim().slice(0, 90)}`);
   }
   Object.assign(checks, checkStatistics(answer, validationStats));
   checks.evidenceWarnings = [...grounded.warnings, ...(evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [])];

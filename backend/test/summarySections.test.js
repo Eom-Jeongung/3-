@@ -22,3 +22,14 @@ test('시사점에 회사 의도를 단정하는 말을 쓰면 과한 해석으�
   const answer = `${answerWith(SECTIONS)}\n## 시사점\n- 확인해 볼 점: 삼성의 전략 변화를 살펴볼 필요가 있다`;
   assert.equal(checkSummary(answer, STAT, []).overreach.length, 1);
 });
+
+test('필수 자동 안내는 모델 답변이 아니라 최종 한계에서 확인한다', () => {
+  const answer = answerWith(SECTIONS.filter((name) => name !== '한계'));
+  const required = '- 규칙 기반 자동 분류입니다.';
+  const finalContent = `${answer}\n## 한계\n${required}`;
+  assert.deepEqual(checkSummary(answer, STAT, [], { finalContent, requiredLimitations: [required] }).missingSections, []);
+  assert.deepEqual(checkSummary(answer, STAT, [], {
+    finalContent: `${answer}\n${required}\n## 한계\n- 다른 안내`,
+    requiredLimitations: [required],
+  }).formatIssues, ['최종 한계 안내 1줄 누락']);
+});
