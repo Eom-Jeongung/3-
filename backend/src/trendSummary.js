@@ -176,7 +176,19 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
     '[근거 후보 특허] (출원번호 | 회사 | 출원일 | 상태 | 분야 | 선정 이유 | 명칭 | 초록 앞부분)',
     ...evidence.map((e) => `${e.number} | ${e.company} | ${e.date} | ${e.status} | ${e.field} | ${e.reason} | ${e.title} | ${e.abstract}`),
   ].join('\n');
-  return { facts, statText, evidence, structuredStats, dataWarnings };
+  // 입력 표는 전 기간 0건인 행을 생략하지만, 검사는 집계에서 확인한 0건도 대조한다.
+  const zeroRows = [...data.companies.flatMap((company) => data.groups
+    .filter((field) => data.series[company][field].every((count) => count === 0))
+    .map((field) => ({ company, field }))),
+  ...totals.filter((row) => row.counts.every((count) => count === 0))
+    .map((row) => ({ company: row.company, field: totalField }))];
+  const validationStats = {
+    ...structuredStats,
+    values: [...structuredStats.values, ...zeroRows.flatMap((row) => years.map((year) => ({
+      ...row, year: Number(year), metric: 'count', value: 0,
+    })))],
+  };
+  return { facts, statText, evidence, structuredStats, validationStats, dataWarnings };
 }
 
 /** 공개가 끝난 마지막 연도 (그 해 12월 31일 출원까지 공개가 끝났다고 볼 수 있는 해). 요약 기본 기간의 끝 */
@@ -215,7 +227,7 @@ const scopeKey = ({ level1 = '', level2 = '', level3 = '' }) => ({ level1: level
 export async function generateTrendSummary({ level1, level2, level3, from, to }, { source = 'manual' } = {}) {
   if (!isAiConfigured()) throw new Error('AI 설정(AI_BASE_URL, AI_MODEL)이 비어 있어요');
   const scope = scopeKey({ level1, level2, level3 });
-  const { facts, statText, evidence, structuredStats, dataWarnings } = buildSummaryInput({ ...scope, from, to });
+  const { facts, statText, evidence, structuredStats, validationStats, dataWarnings } = buildSummaryInput({ ...scope, from, to });
   // 고른 범위·기간에 분류된 특허가 없으면 AI를 부르지 않는다 (비용을 쓰고 의미 없는 요약이 저장되는 것을 막는다)
   if (structuredStats.values.length === 0) {
     throw Object.assign(new Error('선택한 범위와 기간에 분류된 특허가 없어 요약을 만들 수 없어요'), { status: 422 });
@@ -229,10 +241,10 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
   const parts = await Promise.all(prompts.slice(0, 3).map((prompt, i) => runPart(prompt, i)));
   parts.push(await runPart(prompts[3], 3, combineSummaryParts(parts)));
   const answer = combineSummaryParts(parts);
-  const grounded = groundInterpretations(answer, evidence, structuredStats);
+  const grounded = groundInterpretations(answer, evidence, validationStats);
   let content = grounded.content;
   const checks = checkSummary(content, statText, evidence);
-  Object.assign(checks, checkStatistics(answer, structuredStats));
+  Object.assign(checks, checkStatistics(answer, validationStats));
   checks.evidenceWarnings = [...grounded.warnings, ...(evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [])];
   checks.foreignText = grounded.foreignText;
   checks.dataWarnings = dataWarnings;

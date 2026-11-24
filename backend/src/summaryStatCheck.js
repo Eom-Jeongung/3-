@@ -38,28 +38,50 @@ function mentionsIn(line, stats) {
 // 한 조각에서 숫자 주장 꺼내기: [{ metric, year, value }], 해석할 수 없는 숫자는 problems에
 function claimsIn(piece, stats, changeAllowed, problems, earlierYear, lineIsChange) {
   const claims = [];
-  let text = piece.replace(ARROW, (_, y1, n1, y2, n2) => {
-    claims.push({ metric: 'count', year: y1 ? Number(y1) : stats.from, value: Number(n1) });
-    claims.push({ metric: 'count', year: y2 ? Number(y2) : stats.to, value: Number(n2) });
+  const hasNewSubject = (prefix) => /,\s*[^,.;\d]+(?:은|는)\s+[^,]*$/.test(prefix);
+  let text = piece.replace(/증감률\s*순위\s*(\d+)\s*위/g, (_, rank) => {
+    claims.push({ metric: 'changeRank', year: stats.to, value: Number(rank) });
+    return ' ';
+  });
+  text = text.replace(ARROW, (_, y1, n1, y2, n2, offset, str) => {
+    const laterSentence = /[.。]\s/.test(str.slice(0, offset));
+    const newSubject = hasNewSubject(str.slice(0, offset));
+    claims.push({ metric: 'count', year: y1 ? Number(y1) : stats.from, value: Number(n1), laterSentence, newSubject });
+    claims.push({ metric: 'count', year: y2 ? Number(y2) : stats.to, value: Number(n2), laterSentence, newSubject });
     return ' ';
   });
   text = text.replace(/([+-]?\d+(?:\.\d+)?)\s*%/g, (whole, num, offset, str) => {
-    const nearby = `${str.slice(Math.max(0, offset - 12), offset)} ${str.slice(offset + whole.length, offset + whole.length + 12)}`;
-    const isShare = /비중|점유율/.test(nearby);
+    const before = str.slice(0, offset).split(/[,。]|\.\s/).at(-1);
+    const after = str.slice(offset + whole.length).split(/[,。]|\.\s/)[0];
+    const nearby = `${before.slice(-18)} ${after.slice(0, 12)}`;
+    const isShare = /비중|점유율|회사 전체 대비/.test(nearby);
     // "증가율(20%)이 자사(66%)보다"처럼 바로 옆에 말이 없어도, 줄이 증감률 이야기면 증감률로 본다
-    const isChange = /증가|상승|늘|감소|하락|줄|증감|변화율/.test(nearby) || (!isShare && lineIsChange);
+    const isChange = !isShare && (/^[+-]/.test(num) || /증가|상승|늘|감소|하락|줄|증감|변화율/.test(nearby) || lineIsChange);
     if (isShare === isChange) { problems.push('비중인지 증감률인지 알 수 없는 %'); return ' '; }
     if (isChange && !changeAllowed) { problems.push('증감률의 비교 기간을 알 수 없음'); return ' '; }
     let value = Number(num);
     if (isChange && /감소|하락|줄/.test(nearby) && !/^[+-]/.test(num)) value = -value;
-    claims.push({ metric: isShare ? 'share' : 'change', year: stats.to, value });
+    const shareYear = [...before.matchAll(/(\d{4})\s*년/g)].at(-1);
+    claims.push({ metric: isShare ? 'share' : 'change', year: isShare && shareYear ? Number(shareYear[1]) : stats.to, value });
     return ' ';
   });
+  text = text.replace(/(\d{4})(?:\s*년)?\s*(?:[~–-]|부터)\s*(\d{4})\s*년(?:까지)?\s*(?:모든 해|모두|연간|매년)\s*(\d+)\s*건/g,
+    (_, first, last, num) => {
+      if (Number(first) < stats.from || Number(last) > stats.to || Number(first) > Number(last)) {
+        problems.push('건수의 연도 범위가 자료와 다름');
+      } else {
+        for (let year = Number(first); year <= Number(last); year++) claims.push({ metric: 'count', year, value: Number(num) });
+      }
+      return ' ';
+    });
   text = text.replace(/(\d+)\s*건/g, (whole, num, offset, str) => {
-    const years = [...str.slice(0, offset).matchAll(/(\d{4})\s*년/g)];
-    const year = years.length ? Number(years.at(-1)[1]) : earlierYear;
+    const prefix = str.slice(0, offset);
+    const yearMatch = [...prefix.matchAll(/(\d{4})\s*년/g)].at(-1);
+    // 한 건수에 붙은 연도를 다음 건수에 재사용하지 않는다.
+    const sinceYear = prefix.slice(yearMatch?.index ?? 0);
+    const year = /\d+\s*건/.test(sinceYear) ? null : yearMatch ? Number(yearMatch[1]) : earlierYear;
     if (!year) { problems.push('건수의 연도를 알 수 없음'); return ' '; }
-    claims.push({ metric: 'count', year, value: Number(num) });
+    claims.push({ metric: 'count', year, value: Number(num), laterSentence: /[.。]\s/.test(prefix), newSubject: hasNewSubject(prefix) });
     return ' ';
   });
   if (/\d/.test(text.replace(/\d{4}\s*년/g, ''))) problems.push('지표나 단위가 불분명한 숫자');
@@ -69,7 +91,16 @@ function claimsIn(piece, stats, changeAllowed, problems, earlierYear, lineIsChan
 export function checkStatistics(answer, stats) {
   const statMismatches = [];
   const statUnverified = [];
-  const lookup = (company, field, year, metric) => stats.values.find((v) => v.company === company && v.field === field && v.year === year && v.metric === metric);
+  const lookup = (company, field, year, metric) => {
+    if (metric === 'changeRank') {
+      const ranked = stats.values.filter((v) => v.company === company && v.year === year
+        && v.metric === 'change' && v.value !== null && stats.fields.includes(v.field))
+        .sort((a, b) => b.value - a.value);
+      const index = ranked.findIndex((v) => v.field === field);
+      return index < 0 ? undefined : { value: index + 1 };
+    }
+    return stats.values.find((v) => v.company === company && v.field === field && v.year === year && v.metric === metric);
+  };
   const defaultField = stats.totalField ?? (stats.fields.length === 1 && stats.fields[0] === '전체' ? '전체' : null);
 
   let section = '';
@@ -81,7 +112,8 @@ export function checkStatistics(answer, stats) {
       .replace(/(\d),(?=\d{3}(?!\d))/g, '$1')
       .replace(/\d+\s*건\s*(?:미만|이상|이하|초과)/g, '')
       .replace(/중국\s*4\s*사/g, '중국')
-      .replace(/\d{4}\s*[~–-]\s*\d{4}\s*년/g, '')
+      .replace(/자료 범위\s*\([^)]*\)/g, '')
+      .replace(/\d{4}\s*[~–-]\s*\d{4}\s*년(?!\s*(?:모든 해|모두|연간|매년)\s*\d+\s*건)/g, '')
       .replace(/(\d+)\s*건\s*\(\s*(\d{4})\s*년\s*(\)|,\s*)/g, (_, n, y, rest) => `${y}년 ${n}건${rest === ')' ? '' : '('}`);
     if (!/\d/.test(line.replace(/\d{4}\s*년/g, ''))) continue;
 
@@ -91,7 +123,28 @@ export function checkStatistics(answer, stats) {
     // 연도를 하나도 적지 않은 "자사 출원이 31% 증가" 같은 줄도 자료의 증감률(첫해 대비 마지막 해)로 본다.
     // 연도를 하나만 적은 "2022년 50% 증가"처럼 기간이 어긋날 수 있는 줄만 확인 불가로 남긴다
     const changeAllowed = lineIsChange || lineYears.length === 0 || /\d\s*건?\s*(?:→|->)\s*(?:\d{4}\s*년\s*)?\d/.test(line) || (lineYears.includes(stats.from) && lineYears.includes(stats.to));
-    const marks = mentionsIn(line, stats);
+    const mentions = mentionsIn(line, stats);
+    // "전극 … 2024년 자사 소자 출원 중 비중"에서 소자는 분모다.
+    const denominatorMarks = new Set();
+    mentions.forEach((mark, i) => {
+      if (mark.type !== 'field' || mark.value !== defaultField) return;
+      const next = mentions[i + 1];
+      if (next?.type === 'field' && /^\s*$/.test(line.slice(mark.end, next.idx))) {
+        denominatorMarks.add(mark);
+        return;
+      }
+      if (!/^\s*(?:전체\s*)?출원\s*중\s*(?:비중|점유율)/.test(line.slice(mark.end))) return;
+      const previousCompany = mentions.slice(0, i).findLast((m) => m.type === 'company');
+      const previousField = mentions.slice(0, i).findLast((m) => m.type === 'field');
+      if (!previousCompany || !previousField || previousField.value === defaultField) return;
+      if (previousCompany.idx > previousField.idx) {
+        const owner = mentions.slice(0, i).reverse().find((m) => m.type === 'company' && m.idx < previousField.idx);
+        if (owner?.value !== previousCompany.value) return;
+        denominatorMarks.add(previousCompany);
+      }
+      denominatorMarks.add(mark);
+    });
+    const marks = mentions.filter((m) => !denominatorMarks.has(m));
     const lineCompanies = new Set(marks.filter((m) => m.type === 'company').map((m) => m.value));
     const lineFields = new Set(marks.filter((m) => m.type === 'field').map((m) => m.value));
     const cuts = [0, ...marks.map((m) => m.idx), line.length];
@@ -107,7 +160,8 @@ export function checkStatistics(answer, stats) {
       const start = mark ? mark.end : 0;
       const piece = line.slice(start, cuts[k + 1]);
       // "2022년 자사 소자 320건"처럼 연도가 이름보다 앞에 오면 줄 앞부분의 마지막 연도를 쓴다
-      const earlier = [...line.slice(0, start).matchAll(/(\d{4})\s*년/g)].at(-1);
+      const preceding = line.slice(0, start).split(/\d+\s*건/).at(-1);
+      const earlier = [...preceding.matchAll(/(\d{4})\s*년/g)].at(-1);
       const claims = claimsIn(piece, stats, changeAllowed, problems, earlier ? Number(earlier[1]) : null, lineIsChange);
       if (!claims.length) continue;
       const manyCompanies = pending.company.size > 1;
@@ -127,10 +181,11 @@ export function checkStatistics(answer, stats) {
       // 예: "삼성: A 증가율(20%)이 자사(66%)보다 낮고, 봉지(-37%)는 감소" — 봉지는 삼성 숫자인데 바로 앞은 자사
       const carriedAmbiguous = (!companyDirect && lineCompanies.size > 1) || (!fieldDirect && lineFields.size > 1);
       for (const c of claims) {
+        if (c.newSubject) { problems.push('새 문장 주제의 분야를 알 수 없음'); continue; }
         const fact = lookup(company, f, c.year, c.metric);
         if (!fact || fact.value === null) { problems.push(`대응 통계 없음(${f} ${c.year}년)`); continue; }
         if (fact.value === c.value) continue;
-        if (carriedAmbiguous) problems.push('누구의 숫자인지 확인 필요(앞 문장에서 이어받음)');
+        if (carriedAmbiguous || (c.laterSentence && lineCompanies.size > 1)) problems.push('누구의 숫자인지 확인 필요(앞 문장에서 이어받음)');
         else mismatches.push(`${company} / ${f} / ${c.year} / ${c.metric}: 요약 ${c.value}, 통계 ${fact.value}`);
       }
     }

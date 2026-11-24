@@ -16,6 +16,32 @@ for (const [company, group, first, last, share] of [
 }
 const stats = { from: 2020, to: 2022, fields: [field, other], values };
 
+test('부호 있는 증감률과 전체 출원 중 비중을 해당 분야와 대조한다', () => {
+  const scoped = { ...stats, totalField: '소자' };
+  const comparison = `삼성 ${other} 2020년 50건 → 2022년 100건(100% 증가), 자사 같은 분야(-20%)와 방향이 다르다.`;
+  const share = `자사 ${field}는 2020년 100건에서 2022년 150건으로 50% 증가했으며, 2022년 자사 소자 출원 중 비중은 60%다.`;
+  assert.deepEqual(checkStatistics(comparison + '\n' + share, scoped), { statMismatches: [], statUnverified: [] });
+  assert.equal(checkStatistics(share.replace('60%', '61%'), scoped).statMismatches.length, 1);
+});
+
+test('증감률 순위를 확인하고, 연도가 빠진 건수를 마지막 연도와 비교하지 않는다', () => {
+  const ranked = `삼성 ${other} 증감률 순위 1위`;
+  assert.deepEqual(checkStatistics(ranked, stats), { statMismatches: [], statUnverified: [] });
+  assert.equal(checkStatistics(ranked.replace('1위', '2위'), stats).statMismatches.length, 1);
+  const result = checkStatistics(`자사 ${field} 2020년 100건, 2022년 150건과 삼성 같은 분야 (80건, 120건)`, stats);
+  assert.equal(result.statMismatches.length, 0);
+  assert.equal(result.statUnverified.length, 1);
+});
+
+test('모든 해에 해당하는 건수는 기간 전체와 대조한다', () => {
+  const periodStats = { ...stats, values: [...values, ...[2020, 2021, 2022].map((year) => ({
+    company: 'china', field, year, metric: 'count', value: 0,
+  }))] };
+  const line = `중국 ${field} 2020~2022년 모든 해 0건`;
+  assert.deepEqual(checkStatistics(line, periodStats), { statMismatches: [], statUnverified: [] });
+  assert.equal(checkStatistics(line.replace('0건', '1건'), periodStats).statMismatches.length, 3);
+});
+
 test('회사·분야·연도·지표가 맞는 수치를 확인한다', () => {
   const result = checkStatistics(`자사 ${field} 2020년 100건, 2022년 150건 (50% 증가)\n자사 ${field} 2022년 비중 60%`, stats);
   assert.deepEqual(result, { statMismatches: [], statUnverified: [] });

@@ -2,7 +2,7 @@ import { checkStatistics } from './summaryStatCheck.js';
 
 // AI 요약의 줄마다 근거를 확인해 표시를 붙인다. 원문은 지우지 않는다 (맞는 내용까지 사라지지 않게)
 // - 통계와 다른 숫자가 있으면 "[숫자 다름]", 확인하지 못한 문장은 "[확인 필요]", 한자·일본 글자가 섞이면 "[다른 언어]"
-// - 주목 특허는 근거 목록의 출원번호 하나와 맞으면 실제 명칭·선정 이유로 바꿔 쓴다
+// - 주목 특허는 회사와 선정 이유를 근거 목록에서 가져오고, 기술 설명은 남겨 기존 근거 검사에 넘긴다
 // - 해석은 "회사 분야 연도 건수 | 출원번호 | 「원문」" 형식이고 통계·특허 원문이 맞을 때만 확인된 해석으로 정리한다
 //   이것은 추적 가능성 확인이지, 해석의 인과관계를 증명하는 것은 아니다
 export const FLAGS = { mismatch: '숫자 다름', unverified: '확인 필요', foreign: '다른 언어' };
@@ -34,7 +34,14 @@ export function groundInterpretations(content, evidence, stats) {
       if (/주목 특허/.test(section)) {
         const citations = body.match(/\d{13}/g) ?? [];
         const item = citations.length === 1 ? byNumber.get(citations[0]) : null;
-        if (item) return `- ${item.number} (${item.company}): ${item.title} (${item.reason})`;
+        if (!evidence.length && !citations.length && !foreign) {
+          return '- 제공된 근거 후보 특허가 없어 주목 특허를 선정하지 않았습니다.';
+        }
+        if (item && !foreign) {
+          const description = body.match(/^\**\d{13}\**\s*\([^)]*(?:\([^)]*\)[^)]*)?\)\s*[:：]\s*(.+)$/)?.[1]
+            .replace(/\s*\([^()]*(?:급증 용어|증감이 큰 분야|선정 이유)[^()]*\)\s*[.。]?\s*$/, '').trim();
+          return `- ${item.number} (${item.company}): ${description || item.title} (${item.reason})`;
+        }
         warnings.push(`근거 목록의 특허 하나와 연결하지 못한 주목 특허: ${body}`);
         return mark(foreign ? 'foreign' : 'unverified', body);
       }

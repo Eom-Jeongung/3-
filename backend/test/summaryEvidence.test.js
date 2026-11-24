@@ -60,6 +60,16 @@ test('한자·일본 글자가 섞인 줄은 다른 언어로 표시하고 따�
   assert.equal(result.foreignText.length, 1);
 });
 
+test('주목 특허의 기술 설명을 남기고 회사와 선정 이유는 근거 목록에서 가져온다', () => {
+  const e = [{ ...evidence[0], company: '자사(LG디스플레이)', reason: '급증 용어 "터치"' }];
+  const line = '## 주목 특허\n- 1020240147664 (자사): 전극을 포함하는 표시 장치 (급증 용어 "센서")';
+  assert.equal(groundInterpretations(line, e, stats).content,
+    '## 주목 특허\n- 1020240147664 (자사(LG디스플레이)): 전극을 포함하는 표시 장치 (급증 용어 "터치")');
+  const empty = groundInterpretations('## 주목 특허\n- 근거 후보가 없습니다.', [], stats);
+  assert.deepEqual(empty.warnings, []);
+  assert.match(empty.content, /근거 후보 특허가 없어/);
+});
+
 test('기간 중 작은 표본이 있으면 사실 인용이 있어도 해석을 확인 필요로 둔다', () => {
   const small = { ...stats, minimumSample: 30, values: [...stats.values, { company: 'own', field, year: 2020, metric: 'count', value: 29 }] };
   const text = `- 해석: 자사 ${field} 2022년 40건 | 1020240147664 | 「터치 센서 전극을 포함하는」`;
