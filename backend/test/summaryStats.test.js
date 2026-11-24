@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 process.env.DB_PATH = ':memory:';
 const { db } = await import('../src/db.js');
 const { getSummaryStats } = await import('../src/summaryStats.js');
-const { buildSummaryInput, generateTrendSummary, selectSummaryEvidence, SYSTEM_PROMPT, SUMMARY_TASKS, splitSummaryPrompt, combineSummaryParts } = await import('../src/trendSummary.js');
+const { buildSummaryInput, generateTrendSummary, selectSummaryEvidence, SUMMARY_TASKS, splitSummaryPrompt, combineSummaryParts } = await import('../src/trendSummary.js');
 const { CRITERIA_VERSION } = await import('../src/classification.js');
 
 const fields = ['화소 배열·레이아웃', '패널 구조 설계', '마이크로렌즈·광추출 구조', '마이크로LED 어레이 구조', '터치·센서'];
@@ -255,12 +255,19 @@ test('선택한 범위에 분류된 특허가 없으면 AI를 부르지 않고 �
   }
 });
 
-test('기존 공통 규칙과 모든 출력 항목을 문구 변경 없이 네 프롬프트에 나눈다', () => {
-  const [rules, ...sections] = SYSTEM_PROMPT.split(/(?=^## )/m);
+test('각 프롬프트는 담당 항목만 요청하고 수치 정확성 규칙을 유지한다', () => {
   const prompts = splitSummaryPrompt();
   assert.equal(prompts.length, 4);
-  for (const prompt of prompts) assert.ok(prompt.startsWith(rules));
-  for (const section of sections) assert.equal(prompts.filter((prompt) => prompt.includes(section.trimEnd())).length, 1);
+  prompts.forEach((prompt, i) => {
+    assert.match(prompt, /담당 범위:/);
+    assert.match(prompt, /다른 항목의 제목·내용/);
+    assert.deepEqual([...prompt.matchAll(/^## (.+)$/gm)].map((m) => m[1].replace(/ \(3줄\)$/, '')), SUMMARY_TASKS[i]);
+    assert.match(prompt, /비중·차이·합계·배율을 새로 계산하지 않는다/);
+    assert.match(prompt, /한 문장에는 한 회사와 한 분야/);
+    assert.match(prompt, /30건 미만/);
+  });
+  assert.doesNotMatch(prompts.slice(0, 3).join('\n'), /시사점에는 새 숫자|주목 특허.*4~5건/);
+  assert.doesNotMatch(prompts[3], /핵심 흐름은 정확히 3줄|칸에는 첫해보다/);
   assert.deepEqual(SUMMARY_TASKS.flat(), ['핵심 메시지', '핵심 흐름', '성장 분야', '경쟁사 동향', '주목 특허', '시사점', '한계']);
 });
 

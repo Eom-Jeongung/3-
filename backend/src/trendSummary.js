@@ -187,7 +187,7 @@ export function lastCompleteYear() {
   return cutoff.getUTCMonth() === 11 && cutoff.getUTCDate() === 31 ? cutoff.getUTCFullYear() : cutoff.getUTCFullYear() - 1;
 }
 
-// 각 파일은 기존 규칙과 해당 출력 틀을 그대로 담는다.
+// 각 파일은 담당 항목의 규칙과 출력 틀만 담는다.
 export const SUMMARY_TASKS = [
   ['핵심 메시지'],
   ['핵심 흐름', '성장 분야'],
@@ -200,13 +200,6 @@ const PROMPT_FILES = ['01_stats.md', '02_timeline.md', '03_competitors.md', '04_
 export function splitSummaryPrompt() {
   return PROMPT_FILES.map((name) => readFileSync(new URL('../prompts/' + name, import.meta.url), 'utf8').trimEnd());
 }
-
-// 문구 보존 검사에 쓰는 기존 일곱 항목의 전체 프롬프트.
-export const SYSTEM_PROMPT = (() => {
-  const prompts = splitSummaryPrompt();
-  const rules = prompts[0].split(/(?=^## )/m)[0];
-  return rules + combineSummaryParts(prompts);
-})();
 
 // 지정된 항목만 조립한다. 모델이 항목을 누락하면 기존 검사에서 누락으로 표시한다.
 export function combineSummaryParts(answers) {
