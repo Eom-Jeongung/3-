@@ -279,7 +279,7 @@ test('네 응답은 지정된 기존 항목만 기존 순서로 조합한다', (
   assert.doesNotMatch(answer, /원치 않는 항목/);
 });
 
-test('요약 생성 시 네 요청에 구조화 통계를 전달하고 수치 불일치 검사를 저장한다', async () => {
+test('요약 생성 시 구조화 통계를 전달하고 수치 검사와 최종 저장 길이를 기록한다', async () => {
   const originalFetch = globalThis.fetch;
   const oldBase = process.env.AI_BASE_URL;
   const oldModel = process.env.AI_MODEL;
@@ -288,7 +288,8 @@ test('요약 생성 시 네 요청에 구조화 통계를 전달하고 수치 �
   process.env.AI_MODEL = 'test';
   globalThis.fetch = async (_url, options) => {
     sent.push(JSON.parse(options.body));
-    return { ok: true, json: async () => ({ choices: [{ message: { content: `## 핵심 흐름\n- 자사 ${fields[0]} 2022년 41건\n## 성장 분야\n## 경쟁사 동향\n## 주목 특허\n## 한계` } }] }) };
+    const longLimitation = '가'.repeat(1650);
+    return { ok: true, json: async () => ({ choices: [{ message: { content: `## 핵심 흐름\n- 자사 ${fields[0]} 2022년 41건\n## 성장 분야\n## 경쟁사 동향\n## 주목 특허\n## 한계\n- ${longLimitation}` } }] }) };
   };
   db.exec('SAVEPOINT generation_test');
   try {
@@ -301,6 +302,8 @@ test('요약 생성 시 네 요청에 구조화 통계를 전달하고 수치 �
     assert.ok(result.checks.dataWarnings.length);
     assert.match(result.content, /30건은 기존 주의 기준/);
     assert.match(result.content, /급증 용어는 유사 초록 중복 제거/);
+    assert.ok(result.content.length > 1800);
+    assert.ok(result.checks.formatIssues.includes(`최종 요약 ${result.content.length}자 (1,800자 이하여야 함)`));
   } finally {
     db.exec('ROLLBACK TO generation_test');
     db.exec('RELEASE generation_test');

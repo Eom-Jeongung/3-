@@ -243,11 +243,6 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
   const answer = combineSummaryParts(parts);
   const grounded = groundInterpretations(answer, evidence, validationStats);
   let content = grounded.content;
-  const checks = checkSummary(content, statText, evidence);
-  Object.assign(checks, checkStatistics(answer, validationStats));
-  checks.evidenceWarnings = [...grounded.warnings, ...(evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [])];
-  checks.foreignText = grounded.foreignText;
-  checks.dataWarnings = dataWarnings;
   const limitations = [
     ...(dataWarnings.some((warning) => warning.includes(`기존 주의 기준 ${MIN_COUNT}건 미만`)) ? ['- 일부 회사·분야·연도의 출원 건수가 30건 미만이므로 동향 해석에 주의가 필요합니다. 30건은 기존 주의 기준이며 통계적 유의성을 뜻하지 않습니다.'] : []),
     ...(evidence.length < 4 ? [`- 근거 후보 특허가 ${evidence.length}건으로 부족할 수 있어 기술 동향 판단에 한계가 있습니다.`] : []),
@@ -258,6 +253,11 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
   } else {
     content += `\n## 한계\n${limitations.join('\n')}`;
   }
+  const checks = checkSummary(grounded.content, statText, evidence, { finalLength: content.length });
+  Object.assign(checks, checkStatistics(answer, validationStats));
+  checks.evidenceWarnings = [...grounded.warnings, ...(evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [])];
+  checks.foreignText = grounded.foreignText;
+  checks.dataWarnings = dataWarnings;
   const row = {
     ...scope,
     period_from: from,

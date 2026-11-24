@@ -24,7 +24,7 @@ const termsOf = (text) => [...new Set((text.match(/[가-힣A-Za-z]{2,}/g) ?? [])
  * @param {string} statText 통계 자료(건수·증감률·비중) 글. 여기 있는 숫자만 "건·%·→" 옆에 올 수 있다
  * @param {{number:string, company:string, fullText:string, field?:string}[]} evidence 근거 특허 (fullText = 명칭 + 초록 전체, field = 3차)
  */
-export function checkSummary(answer, statText, evidence) {
+export function checkSummary(answer, statText, evidence, { finalLength = answer.length } = {}) {
   // 1. 숫자: "건", "%", "→" 옆 숫자는 통계 자료의 값이어야 한다. 그 밖의 숫자는 통계나 근거 특허 글에 있으면 된다
   const statNumbers = new Set(statText.match(/\d+/g) ?? []);
   ['3', '85'].forEach((n) => statNumbers.add(n)); // 형식("3줄")과 한계 문구("약 85%")
@@ -116,6 +116,6 @@ export function checkSummary(answer, statText, evidence) {
   const notable = answer.split(/^##\s*주목 특허.*$/m)[1]?.split(/^##/m)[0] ?? '';
   const notableCount = notable.split('\n').filter((l) => /\d{13}/.test(l)).length;
   if (notableCount > 6) formatIssues.push(`주목 특허 ${notableCount}건 (5건 안팎이어야 함)`);
-  if (answer.length > 1800) formatIssues.push(`전체 ${answer.length}자 (1,800자 이하여야 함)`);
+  if (finalLength > 1800) formatIssues.push(`최종 요약 ${finalLength}자 (1,800자 이하여야 함)`);
   return { strangeNumbers: [...strangeNumbers], strangePatents, mixups, unsupported, overreach, missingSections, wrongReasons, formatIssues };
 }
