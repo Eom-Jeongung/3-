@@ -6,11 +6,12 @@ import { db } from './db.js';
 import { getSummaryStats, MIN_COUNT, UNPUBLISHED_MONTHS } from './summaryStats.js';
 import { chat, isAiConfigured } from './ai.js';
 import { CRITERIA_VERSION } from './classification.js';
-import { checkSummary, MAX_NOTABLE_PATENTS, SECTIONS } from './summaryCheck.js';
+import { checkSummary, MAX_SUMMARY_LENGTH, SECTIONS } from './summaryCheck.js';
 import { burstTerms } from './emerging.js';
 import { checkStatistics } from './summaryStatCheck.js';
 import { groundInterpretations } from './summaryEvidence.js';
 import { buildSummaryInsights } from './summaryInsights.js';
+import { patentExcerptSentences, renderPatentExcerpts } from './summaryPatentExcerpts.js';
 
 const COMPANY = { own: '자사(LG디스플레이)', competitor: '경쟁사(삼성디스플레이)', china: '중국 경쟁사(BOE·CSOT·Tianma·Visionox)' };
 const EVIDENCE_LIMIT = 10;
@@ -85,6 +86,7 @@ export function selectSummaryEvidence({ scope, from, to, data, bursts }, databas
       title: e.title,
       fullText: `${e.title} ${(e.abstract ?? '').replace(/\s+/g, ' ').slice(0, 300)}`, // AI에게 전달한 범위와 동일
       abstract: (e.abstract ?? '').replace(/\s+/g, ' ').slice(0, 300),
+      excerptSentences: patentExcerptSentences(e.abstract),
     }));
 }
 
@@ -233,29 +235,6 @@ export function combineSummaryParts(answers) {
   }).join('\n');
 }
 
-function displayedPatents(section, evidence) {
-  const available = new Map(evidence.map((item) => [item.number, item]));
-  const lines = [];
-  for (const line of section.split('\n').slice(1)) {
-    const item = available.get(line.match(/^- (\d{13}) \(/)?.[1]);
-    if (!item) continue;
-    available.delete(item.number);
-    // 식별자와 기술 문장은 유지하고, 설명 첫머리에 인용된 동일 제목만 덜어낸다.
-    const prefix = `- ${item.number} (${item.company}): `;
-    const title = `「${item.title}」`;
-    const description = line.startsWith(prefix) ? line.slice(prefix.length) : '';
-    const redundant = [`${title}은 `, `${title}는 `].find((start) => description.startsWith(start));
-    lines.push(redundant ? prefix + description.slice(redundant.length) : line);
-    if (lines.length === MAX_NOTABLE_PATENTS) break;
-  }
-  if (!lines.length) {
-    lines.push(evidence.length
-      ? '- 주목 특허의 근거를 확인하지 못했습니다.'
-      : '- 제공된 근거 후보 특허가 없어 주목 특허를 선정하지 않았습니다.');
-  }
-  return ['## 주목 특허', ...lines].join('\n');
-}
-
 const scopeKey = ({ level1 = '', level2 = '', level3 = '' }) => ({ level1: level1 ?? '', level2: level2 ?? '', level3: level3 ?? '' });
 
 /** AI로 요약을 만들고 저장한다. 같은 범위·기간은 새 행으로 쌓인다(이전 요약과 비교할 수 있게) */
@@ -269,20 +248,21 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
   }
   const started = Date.now();
   const prompts = splitSummaryPrompt();
-  const runPart = (prompt, i) => chat([
+  const runPart = (prompt, i, input = facts) => chat([
     { role: 'system', content: prompt },
-    { role: 'user', content: `[자료]\n${facts}\n\n위 자료로 동향 요약을 써 줘. 이 요청에서는 제시된 항목만 작성해 줘.` },
+    { role: 'user', content: `[자료]\n${input}\n\n위 자료로 동향 요약을 써 줘. 이 요청에서는 제시된 항목만 작성해 줘.` },
   ], { maxTokens: 12000, purpose: `trend-summary-${i + 1}`, timeoutMs: 180_000 });
   const parts = await Promise.all(prompts.slice(0, 3).map((prompt, i) => runPart(prompt, i)));
-  parts.push(await runPart(prompts[3], 3));
+  const excerptInput = evidence.map((item) => ({
+    출원번호: item.number, 명칭: item.title, 회사: item.company, 분야: item.field,
+    문장: item.excerptSentences.map((text, index) => ({ 번호: index + 1, 원문: text })),
+  }));
+  const selection = await runPart(prompts[3], 3, `[원문 발췌 후보]\n${JSON.stringify(excerptInput)}`);
   const answer = combineSummaryParts(parts);
   const grounded = groundInterpretations(answer, evidence, validationStats);
   const sections = readSummarySections(grounded.content);
   const insights = buildSummaryInsights(sections, validationStats);
   sections.set('시사점', insights.text);
-  if (sections.has('주목 특허')) {
-    sections.set('주목 특허', displayedPatents(sections.get('주목 특허'), evidence));
-  }
   const limitations = [
     '- 규칙 기반 자동 분류의 무작위 검증 정확도는 약 85%입니다.',
     '- 출원일·출원번호 기준으로 패밀리·후속 출원을 포함합니다. 급증 용어는 유사 초록 중복 제거 후 문서 수입니다.',
@@ -293,16 +273,21 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
     ...(evidence.length < 4 ? [`- 근거 후보 특허가 ${evidence.length}건으로 기술 동향 판단에 한계가 있습니다.`] : []),
   ];
   sections.set('한계', ['## 한계', ...limitations].join('\n'));
-  const content = SECTIONS.map((name) => sections.get(name)).filter(Boolean).join('\n');
+  const assembled = () => SECTIONS.map((name) => sections.get(name)).filter(Boolean).join('\n');
+  const patentSection = readSummarySections(selection).get('주목 특허');
+  const excerptWarnings = [];
+  if (patentSection) {
+    const budget = MAX_SUMMARY_LENGTH - assembled().length - 1; // 발췌 항목 앞 줄바꿈 포함
+    const rendered = renderPatentExcerpts(patentSection, evidence, budget);
+    sections.set('주목 특허', rendered.content);
+    excerptWarnings.push(...rendered.warnings);
+  }
+  const content = assembled();
   const checks = checkSummary(grounded.content, statText, evidence, { finalContent: content, requiredLimitations: limitations });
   checks.insightSelection = insights.counts;
-  const interpretation = /시사(?:한|하|된|점)|필요(?:가\s*있|하(?:다|며|다는))|전망|예상(?:된|한|하)|바람직/;
-  const patentLines = (readSummarySections(answer).get('주목 특허') ?? '').split('\n').slice(1);
-  for (const line of patentLines.filter((line) => interpretation.test(line))) {
-    checks.overreach.push(`주목 특허의 해석·제언 표현 확인 필요: ${line.trim().slice(0, 90)}`);
-  }
   Object.assign(checks, checkStatistics(answer, validationStats));
-  checks.evidenceWarnings = [...grounded.warnings, ...(evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [])];
+  checks.evidenceWarnings = [...grounded.warnings, ...excerptWarnings,
+    ...(evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [])];
   checks.foreignText = grounded.foreignText;
   checks.dataWarnings = dataWarnings;
   const row = {

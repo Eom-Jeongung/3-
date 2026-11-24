@@ -4,6 +4,7 @@
 /** 요약의 일곱 칸 (프롬프트와 검사가 함께 쓴다). 핵심 메시지·시사점은 2026-11 담당자님 피드백으로 추가 */
 export const SECTIONS = ['핵심 메시지', '핵심 흐름', '성장 분야', '경쟁사 동향', '주목 특허', '시사점', '한계'];
 export const MAX_NOTABLE_PATENTS = 3;
+export const MAX_SUMMARY_LENGTH = 1800;
 
 // 특허 설명에 붙이기 쉬운 효과 말. 그 특허 초록에 없으면 AI가 덧붙인 것
 const EFFECT_WORDS = ['신뢰성', '내구성', '수명', '광효율', '발광 효율', '고해상도', '정밀화', '화질', '시인성', '투과율', '소비전력', '생산성', '수율', '원가', '박형화'];
@@ -122,6 +123,6 @@ export function checkSummary(answer, statText, evidence, { finalContent = answer
   const limitationLines = new Set(finalContent.split(/^##[ \t]+한계[ \t]*$/m)[1]?.split(/^##[ \t]+/m)[0].split('\n').map((line) => line.trim()));
   const missingLimitations = requiredLimitations.filter((line) => !limitationLines.has(line)).length;
   if (missingLimitations) formatIssues.push(`최종 한계 안내 ${missingLimitations}줄 누락`);
-  if (finalContent.length > 1800) formatIssues.push(`최종 요약 ${finalContent.length}자 (1,800자 이하여야 함)`);
+  if (finalContent.length > MAX_SUMMARY_LENGTH) formatIssues.push(`최종 요약 ${finalContent.length}자 (1,800자 이하여야 함)`);
   return { strangeNumbers: [...strangeNumbers], strangePatents, mixups, unsupported, overreach, missingSections, wrongReasons, formatIssues };
 }

@@ -78,6 +78,16 @@ test('기간 중 작은 표본이 있으면 사실 인용이 있어도 해석을
   assert.match(groundInterpretations(text, evidence, sufficient).content, /특허\(1020240147664\)/);
 });
 
+test('소표본의 실제 건수는 보존하고 증가 추세 단정은 제거한다', () => {
+  const small = { ...stats, minimumSample: 30, values: [2, 1, 3].map((value, index) => ({
+    company: 'own', field, year: 2020 + index, metric: 'count', value,
+  })) };
+  const result = groundInterpretations(`- 자사 ${field} 2020년 2건, 2021년 1건, 2022년 3건으로 증가 추세다.`, evidence, small);
+  assert.match(result.content, /2020년 2건, 2021년 1건, 2022년 3건/);
+  assert.match(result.content, /추세를 단정하기 어렵습니다/);
+  assert.doesNotMatch(result.content, /증가 추세/);
+});
+
 // 2026-11-21: 시사점 칸(담당자님 피드백으로 추가)은 숫자 없이 살펴볼 점을 쓰므로 숫자가 없다고 표시하지 않는다
 test('시사점은 숫자가 없어도 표시하지 않고, 근거 목록에 없는 특허나 틀린 숫자만 표시한다', () => {
   const ok = '## 시사점\n- 확인해 볼 점: 자사 터치·센서의 주목 특허(1020240147664)를 더 살펴보면 좋다.';

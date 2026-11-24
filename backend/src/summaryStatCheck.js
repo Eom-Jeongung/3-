@@ -99,9 +99,20 @@ function lookupStatistic(stats, company, field, year, metric) {
   return stats.values.find((v) => v.company === company && v.field === field && v.year === year && v.metric === metric);
 }
 
-const normalizeCountYears = (line) => line
-  .replace(/(\d),(?=\d{3}(?!\d))/g, '$1')
-  .replace(/(\d+)\s*건\s*\(\s*(\d{4})\s*년\s*(\)|,\s*)/g, (_, n, y, rest) => `${y}년 ${n}건${rest === ')' ? '' : '('}`);
+function normalizeCountYears(line, stats) {
+  return line
+    .replace(/(\d),(?=\d{3}(?!\d))/g, '$1')
+    .replace(/(\d+)\s*건\s*\(\s*(\d{4})\s*년\s*(\)|,\s*)/g, (_, n, y, rest) => `${y}년 ${n}건${rest === ')' ? '' : '('}`)
+    .replace(/첫\s*해\s+(\d+)\s*건\s*(?:→|->)\s*마지막\s*해\s+(\d+)\s*건/g,
+      (_, first, last) => `${stats.from}년 ${first}건 → ${stats.to}년 ${last}건`)
+    .replace(/(?:모든\s*해|연도별)\s*0\s*건/g, (text, offset, whole) => {
+      const before = whole.slice(0, offset);
+      if (/\d{4}\s*[~–-]\s*\d{4}\s*년\s*$/.test(before)) return text; // 기간이 바로 앞이면 기존 검사 사용
+      const years = new Set([...whole.matchAll(/(\d{4})(?=\s*(?:년|[~–-]\s*\d{4}\s*년))/g)].map(([, year]) => Number(year)));
+      if (years.size && (years.size !== 2 || !years.has(stats.from) || !years.has(stats.to))) return text;
+      return `${stats.from}~${stats.to}년 모든 해 0건`;
+    });
+}
 
 const UNSTATED_OR_EXCLUDED = /확인\s*(?:되지\s*않|할\s*수\s*없|불가|못)|미확인|제외|누락|부재|미포함|아닌|(?:출원|건수|자료|근거|분야)(?:[이가은는도]\s*|\s+)(?:없|부족)|집계\s*대상(?:이\s*아니|에서\s*빠)/;
 const STAT_METRIC = /\d\s*(?:건|%|위)|(?:→|->)\s*\d/;
@@ -132,7 +143,7 @@ export function verifiedStatisticSubject(raw, stats) {
   const prefix = masked.slice(0, subjectEnd).join('');
   if (STAT_METRIC.test(prefix)) return null;
   if (!company && !/^(?:\s|\d{4}\s*년|전체|합계|합산|분야|[:：()·*])+$/u.test(prefix)) return null;
-  const text = normalizeCountYears(masked.join(''));
+  const text = normalizeCountYears(masked.join(''), stats);
   const years = [...text.matchAll(/(\d{4})\s*년/g)].map((match) => Number(match[1]));
   const periodMatches = new Set(years).size === 2 && years.includes(stats.from) && years.includes(stats.to);
   const explicitChangePeriod = !years.length || periodMatches;
@@ -146,7 +157,21 @@ export function verifiedStatisticSubject(raw, stats) {
     const counts = Object.keys(ALIASES).map((key) => lookupStatistic(stats, key, scope, year, metric)?.value);
     return counts.every(Number.isInteger) && counts.reduce((sum, count) => sum + count, 0) === value;
   })) return null;
-  return { company, field, hasActivity: claims.some(({ metric, value }) => metric !== 'count' || value > 0) };
+  return { company, field, claims, hasActivity: claims.some(({ metric, value }) => metric !== 'count' || value > 0) };
+}
+
+/** 소표본에 대한 단정은 검증된 건수만 남길 수 있을 때 바로잡는다. */
+export function smallSampleTrendCounts(line, stats) {
+  if (!stats.minimumSample || !/(?:증가|감소)\s*추세|상승세|하락세/.test(line)
+    || /(?:단정|판단|해석).{0,12}(?:어렵|없|않|불가)|판단\s*근거\s*부족/.test(line)) return null;
+  const subject = verifiedStatisticSubject(line, stats);
+  if (!subject?.company) return null;
+  const { company, field, claims } = subject;
+  const sample = stats.values.filter((v) => v.company === company && v.field === (field ?? stats.totalField)
+    && v.metric === 'count' && v.year >= stats.from && v.year <= stats.to);
+  if (!sample.some(({ value }) => value < stats.minimumSample)) return null;
+  const counts = new Map(claims.filter(({ metric }) => metric === 'count').map(({ year, value }) => [year, value]));
+  return counts.size ? { company, field, counts: [...counts].sort(([a], [b]) => a - b) } : null;
 }
 
 export function checkStatistics(answer, stats) {
@@ -158,13 +183,12 @@ export function checkStatistics(answer, stats) {
   for (const raw of answer.split('\n')) {
     if (/^\s*##/.test(raw)) { section = raw; continue; }
     if (/한계|주목 특허/.test(section)) continue;
-    const line = normalizeCountYears(raw
+    const line = normalizeCountYears(raw, stats)
       .replace(/\d{13}/g, '')
       .replace(/\d+\s*건\s*(?:미만|이상|이하|초과)/g, '')
       .replace(/중국\s*4\s*사/g, '중국')
       .replace(/자료 범위\s*\([^)]*\)/g, '')
-      .replace(/\d{4}\s*[~–-]\s*\d{4}\s*년(?!\s*(?:모든 해|모두|연간|매년)\s*\d+\s*건)/g, '')
-    );
+      .replace(/\d{4}\s*[~–-]\s*\d{4}\s*년(?!\s*(?:모든 해|모두|연간|매년)\s*\d+\s*건)/g, '');
     if (!/\d/.test(line.replace(/\d{4}\s*년/g, ''))) continue;
 
     const lineYears = [...line.matchAll(/(\d{4})\s*년/g)].map((m) => Number(m[1]));

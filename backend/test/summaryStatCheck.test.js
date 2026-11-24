@@ -42,6 +42,23 @@ test('모든 해에 해당하는 건수는 기간 전체와 대조한다', () =>
   assert.equal(checkStatistics(line.replace('0건', '1건'), periodStats).statMismatches.length, 3);
 });
 
+test('첫해와 마지막 해는 선택 기간 끝점에만 연결한다', () => {
+  const line = `자사 ${field} 첫해 100건 → 마지막 해 150건`;
+  assert.deepEqual(checkStatistics(line, stats), { statMismatches: [], statUnverified: [] });
+  assert.equal(checkStatistics(line.replace('150건', '120건'), stats).statMismatches.length, 1);
+});
+
+test('분야명 뒤의 모든 해 0건도 선택 기간의 각 해를 검사한다', () => {
+  const zeros = [2020, 2021, 2022].map((year) => ({ company: 'china', field, year, metric: 'count', value: 0 }));
+  const line = `중국 2020~2022년 ${field} 출원이 모든 해 0건이다.`;
+  assert.deepEqual(checkStatistics(line, { ...stats, values: [...values, ...zeros] }), { statMismatches: [], statUnverified: [] });
+  zeros[1].value = 1;
+  assert.match(checkStatistics(line, { ...stats, values: [...values, ...zeros] }).statMismatches[0], /2021.*통계 1/);
+  assert.equal(checkStatistics(line.replace('2020~2022년', '2019~2022년'), {
+    ...stats, values: [...values, ...zeros],
+  }).statUnverified.length, 1);
+});
+
 test('회사·분야·연도·지표가 맞는 수치를 확인한다', () => {
   const result = checkStatistics(`자사 ${field} 2020년 100건, 2022년 150건 (50% 증가)\n자사 ${field} 2022년 비중 60%`, stats);
   assert.deepEqual(result, { statMismatches: [], statUnverified: [] });

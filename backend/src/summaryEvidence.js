@@ -1,4 +1,4 @@
-import { checkStatistics } from './summaryStatCheck.js';
+import { checkStatistics, smallSampleTrendCounts } from './summaryStatCheck.js';
 
 // AI 요약의 줄마다 근거를 확인해 표시를 붙인다. 원문은 지우지 않는다 (맞는 내용까지 사라지지 않게)
 // - 통계와 다른 숫자가 있으면 "[숫자 다름]", 확인하지 못한 문장은 "[확인 필요]", 한자·일본 글자가 섞이면 "[다른 언어]"
@@ -48,6 +48,13 @@ export function groundInterpretations(content, evidence, stats) {
       const check = checkStatistics(body, stats);
       if (check.statMismatches.length) { warnings.push(`자료와 다른 숫자: ${body}`); return mark('mismatch', body); }
       if (foreign) { warnings.push(`한국어가 아닌 글자가 섞인 문장: ${body}`); return mark('foreign', body); }
+      const smallSample = smallSampleTrendCounts(body, stats);
+      if (smallSample) {
+        const company = { own: '자사', competitor: '삼성디스플레이', china: '중국 경쟁사' }[smallSample.company];
+        const counts = smallSample.counts.map(([year, value]) => `${year}년 ${value}건`).join(', ');
+        warnings.push(`소표본의 추세 단정을 제외했습니다: ${body}`);
+        return `- ${[company, smallSample.field, counts].filter(Boolean).join(' ')}. 소표본이라 추세를 단정하기 어렵습니다.`;
+      }
       const hasNumber = /\d\s*(?:건|%)|\d\s*(?:→|->)\s*\d/.test(body);
       if (!hasNumber || check.statUnverified.length) { warnings.push(`통계로 확인하지 못한 문장: ${body}`); return mark('unverified', body); }
       return `- ${body}`;

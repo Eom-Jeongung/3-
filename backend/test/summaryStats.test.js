@@ -260,9 +260,9 @@ test('각 프롬프트는 담당 항목만 요청하고 수치 정확성 규칙�
   assert.equal(prompts.length, 4);
   prompts.forEach((prompt, i) => {
     assert.match(prompt, /담당 범위:/);
-    assert.match(prompt, /다른 항목의 제목·내용/);
     assert.deepEqual([...prompt.matchAll(/^## (.+)$/gm)].map((m) => m[1].replace(/ \(3줄\)$/, '')), SUMMARY_TASKS[i]);
     if (i < 3) {
+      assert.match(prompt, /다른 항목의 제목·내용/);
       assert.match(prompt, /비중·차이·합계·배율을 새로 계산하지 않는다/);
       assert.match(prompt, /한 문장에는 한 회사와 한 분야/);
       assert.match(prompt, /30건 미만/);
@@ -270,7 +270,7 @@ test('각 프롬프트는 담당 항목만 요청하고 수치 정확성 규칙�
   });
   assert.doesNotMatch(prompts.slice(0, 3).join('\n'), /시사점에는 새 숫자|주목 특허.*4~5건/);
   assert.doesNotMatch(prompts[3], /한계|시사점|확인해 볼 점|\[앞 칸\]/);
-  assert.match(prompts[3], /\[근거 후보 특허\] 전체를 검토하고 대표 특허를 최대 3건/);
+  assert.match(prompts[3], /\[원문 발췌 후보\]에서 서로 다른 특허를 최대 3건/);
   assert.deepEqual(SUMMARY_TASKS.flat(), ['핵심 메시지', '핵심 흐름', '성장 분야', '경쟁사 동향', '주목 특허']);
 });
 
@@ -283,30 +283,32 @@ test('네 응답은 지정된 기존 항목만 기존 순서로 조합한다', (
   assert.doesNotMatch(answer, /원치 않는/);
 });
 
-test('요약 생성 시 구조화 통계를 전달하고 수치 검사와 최종 저장 길이를 기록한다', async () => {
+test('통계와 원문 문장 선택을 별도로 요청하고 최종 본문에 원문 발췌를 저장한다', async () => {
   const originalFetch = globalThis.fetch;
   const oldBase = process.env.AI_BASE_URL;
   const oldModel = process.env.AI_MODEL;
   const sent = [];
-  const evidence = buildSummaryInput(scope).evidence;
-  assert.ok(evidence.length > 3);
-  process.env.AI_BASE_URL = 'https://example.invalid';
-  process.env.AI_MODEL = 'test';
-  globalThis.fetch = async (_url, options) => {
-    sent.push(JSON.parse(options.body));
-    const patentLines = evidence.slice(0, 4).map((item) =>
-      `- ${item.number} (${item.company}): 「${item.title}」는 패널에 연결된 전극을 포함한다. (${item.reason})`);
-    const content = sent.length === 4
-      ? ['## 주목 특허', ...patentLines, '## 한계', '- 버릴 한계', '## 시사점 및 제언', '- 버릴 시사점'].join('\n')
-      : `## 핵심 흐름\n- 자사 ${fields[0]} 2022년 41건\n- 삼성 ${fields[0]} 2022년 41건\n## 성장 분야\n- ${'가'.repeat(1650)}\n## 경쟁사 동향`;
-    return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
-  };
   db.exec('SAVEPOINT generation_test');
   try {
+    const sentence = '패널에 연결된 전극을 포함하되 구동 회로에는 연결되지 않는다.';
+    db.prepare('UPDATE patents SET abstract = ?').run(sentence);
+    const evidence = buildSummaryInput(scope).evidence;
+    assert.ok(evidence.length > 3);
+    process.env.AI_BASE_URL = 'https://example.invalid';
+    process.env.AI_MODEL = 'test';
+    globalThis.fetch = async (_url, options) => {
+      sent.push(JSON.parse(options.body));
+      const patentLines = evidence.slice(0, 4).map((item) => `- ${item.number} | 1`);
+      const content = sent.length === 4
+        ? ['## 주목 특허', ...patentLines, '## 한계', '- 버릴 한계', '## 시사점 및 제언', '- 버릴 시사점'].join('\n')
+        : `## 핵심 흐름\n- 자사 ${fields[0]} 2022년 41건\n- 삼성 ${fields[0]} 2022년 41건\n## 성장 분야\n## 경쟁사 동향`;
+      return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+    };
     const result = await generateTrendSummary(scope);
     assert.equal(sent.length, 4);
-    assert.ok(sent.every((request) => request.messages[1].content.includes('[구조화 통계:')));
-    assert.doesNotMatch(sent[3].messages[1].content, /\[앞 칸\]/);
+    assert.ok(sent.slice(0, 3).every((request) => request.messages[1].content.includes('[구조화 통계:')));
+    assert.match(sent[3].messages[1].content, /\[원문 발췌 후보\]/);
+    assert.doesNotMatch(sent[3].messages[1].content, /구조화 통계|\[앞 칸\]/);
     for (const { number } of evidence) assert.ok(sent.every((request) => request.messages[1].content.includes(number)));
     assert.equal(result.checks.statMismatches.length, 1);
     assert.equal(result.checks.statUnverified.length, 0);
@@ -314,16 +316,14 @@ test('요약 생성 시 구조화 통계를 전달하고 수치 검사와 최종
     assert.match(result.content, /연간 30건 미만은 해석에 주의/);
     assert.match(result.content, /무작위 검증 정확도는 약 85%/);
     assert.match(result.content, /급증 용어는 유사 초록 중복 제거/);
-    assert.ok(result.content.length > 1800);
-    assert.ok(result.checks.formatIssues.includes(`최종 요약 ${result.content.length}자 (1,800자 이하여야 함)`));
+    assert.ok(result.content.length <= 1800);
     assert.deepEqual(result.checks.missingSections, ['핵심 메시지']);
     assert.deepEqual(result.checks.insightSelection, { pair: 1, company: 0, field: 0, insufficient: 0 });
     assert.match(result.content, /## 시사점\n- 확인해 볼 점: 삼성디스플레이의 화소 배열·레이아웃 출원을 살펴본다\.\n## 한계/);
     assert.doesNotMatch(result.content, /버릴 한계|버릴 시사점/);
     const displayed = result.content.split('## 주목 특허\n')[1].split('\n## 시사점')[0];
     assert.equal(displayed.split('\n').length, 3);
-    assert.ok(displayed.includes('패널에 연결된 전극을 포함한다.'));
-    assert.ok(!displayed.includes(`「${evidence[0].title}」`));
+    assert.ok(displayed.includes(`원문 발췌: 「${sentence}」`));
     assert.ok(!displayed.includes(evidence[3].number));
     assert.ok(!result.checks.formatIssues.some((warning) => /한계 안내|주목 특허/.test(warning)));
   } finally {

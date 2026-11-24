@@ -5,6 +5,10 @@ import { formatAppNo, jsonOrThrow } from '../format.js'
 
 // 굵은 글씨(**…**)와 출원번호(13자리)를 바꾼다. 출원번호는 누르면 특허 상세가 열린다
 function Inline({ text, evidence, onOpen }) {
+  const excerpt = text.match(/^(\d{13} .*?: 원문 발췌: 「)(.*)」$/)
+  if (excerpt) {
+    return <><Inline text={excerpt[1]} evidence={evidence} onOpen={onOpen} />{excerpt[2]}」</>
+  }
   const parts = text.split(/(\*\*[^*]+\*\*|\d{13})/g)
   return parts.map((p, i) => {
     if (/^\*\*[^*]+\*\*$/.test(p)) return <strong key={i}><Inline text={p.slice(2, -2)} evidence={evidence} onOpen={onOpen} /></strong>
