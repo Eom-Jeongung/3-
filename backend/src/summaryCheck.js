@@ -33,6 +33,7 @@ export function checkSummary(answer, statText, evidence, { finalContent = answer
   const evidenceText = evidence.map((e) => `${e.fullText} ${e.date ?? ''}`).join(' '); // 근거 특허의 출원일도 인용될 수 있다
   // "2,225건"처럼 천 단위 쉼표를 넣어 쓴 숫자는 쉼표를 빼고 본다 (쉼표 뒤 "225"만 보고 이상한 숫자로 잡았다)
   const body = answer.replace(/\d{13}/g, ' ').replace(/(\d),(?=\d{3}(?!\d))/g, '$1')
+    .replace(/중국(?:\s*경쟁사)?\s*4\s*사/g, '중국')
     .replace(/증감률\s*순위\s*\d+\s*위/g, ' '); // 순위는 회사·분야별 통계 검사에서 대조
   const strangeNumbers = new Set();
   for (const m of body.matchAll(/(\d+(?:\.\d+)?)(\s*(?:%|건|→))?/g)) {

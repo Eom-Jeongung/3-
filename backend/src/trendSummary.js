@@ -120,8 +120,22 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
   });
 
   const years = requestedPeriods.map(([p]) => p.key);
-  // 고른 범위 전체(예: "소자" 전체)의 합계도 대조할 수 있게 넣는다. AI는 "소자 분야 자사 320건 → 420건"처럼 합계를 자주 쓴다
   const totalField = scope.level3 || scope.level2 || scope.level1 || '전체';
+  // 증가 여부는 첫해와 마지막 해 건수로만 결정한다. 30건 기준은 비율과 해석에 적용한다.
+  const growth = Object.fromEntries(['own', 'competitor'].map((company) => [
+    company,
+    table.filter((row) => row.company === company && row.counts.at(-1) > row.counts[0]
+      && !['미분류', '그 외'].includes(row.group))
+      .map((row) => ({
+        field: row.group === '전체' ? totalField : row.group,
+        first: row.counts[0],
+        last: row.counts.at(-1),
+        change: row.change,
+        canInterpret: row.counts.every((count) => count >= MIN_COUNT),
+      }))
+      .sort((a, b) => (b.last - b.first) - (a.last - a.first)),
+  ]));
+  // 고른 범위 전체(예: "소자" 전체)의 합계도 대조할 수 있게 넣는다. AI는 "소자 분야 자사 320건 → 420건"처럼 합계를 자주 쓴다
   const structuredStats = {
     from, to, fields: data.groups, totalField, minimumSample: MIN_COUNT,
     values: [
@@ -191,7 +205,7 @@ export function buildSummaryInput({ level1, level2, level3, from, to }) {
       ...row, year: Number(year), metric: 'count', value: 0,
     })))],
   };
-  return { facts, statText, evidence, structuredStats, validationStats, dataWarnings, incomplete };
+  return { facts, statText, evidence, structuredStats, validationStats, dataWarnings, incomplete, growth };
 }
 
 /** 공개가 끝난 마지막 연도 (그 해 12월 31일 출원까지 공개가 끝났다고 볼 수 있는 해). 요약 기본 기간의 끝 */
@@ -235,13 +249,28 @@ export function combineSummaryParts(answers) {
   }).join('\n');
 }
 
+function renderGrowthSection(section, growth, evidence, from, to) {
+  const lines = Object.entries({ own: '자사', competitor: '삼성' }).map(([company, label]) => {
+    const [representative] = growth[company];
+    if (!representative) return `- ${label}: 늘어난 분야 없음.`;
+    const { field, first, last, change } = representative;
+    const rate = change === null ? '' : ` (증감률 ${change}%)`;
+    return `- ${label}: ${field} ${from}년 ${first}건 → ${to}년 ${last}건${rate}.`;
+  });
+  const interpretation = section.split('\n').find((line) => /^- (?:\*\*)?해석:\s/.test(line));
+  const patent = interpretation && evidence.find(({ number }) => interpretation.includes(number));
+  const supported = patent && growth[patent.companyKey]?.some(({ field, canInterpret }) => field === patent.field && canInterpret);
+  return ['## 성장 분야', ...lines, supported ? interpretation : '- 해석: 판단 근거 부족'].join('\n');
+}
+
 const scopeKey = ({ level1 = '', level2 = '', level3 = '' }) => ({ level1: level1 ?? '', level2: level2 ?? '', level3: level3 ?? '' });
 
 /** AI로 요약을 만들고 저장한다. 같은 범위·기간은 새 행으로 쌓인다(이전 요약과 비교할 수 있게) */
 export async function generateTrendSummary({ level1, level2, level3, from, to }, { source = 'manual' } = {}) {
   if (!isAiConfigured()) throw new Error('AI 설정(AI_BASE_URL, AI_MODEL)이 비어 있어요');
   const scope = scopeKey({ level1, level2, level3 });
-  const { facts, statText, evidence, structuredStats, validationStats, dataWarnings, incomplete } = buildSummaryInput({ ...scope, from, to });
+  const { facts, statText, evidence, structuredStats, validationStats, dataWarnings, incomplete, growth } =
+    buildSummaryInput({ ...scope, from, to });
   // 고른 범위·기간에 분류된 특허가 없으면 AI를 부르지 않는다 (비용을 쓰고 의미 없는 요약이 저장되는 것을 막는다)
   if (structuredStats.values.length === 0) {
     throw Object.assign(new Error('선택한 범위와 기간에 분류된 특허가 없어 요약을 만들 수 없어요'), { status: 422 });
@@ -252,15 +281,29 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
     { role: 'system', content: prompt },
     { role: 'user', content: `[자료]\n${input}\n\n위 자료로 동향 요약을 써 줘. 이 요청에서는 제시된 항목만 작성해 줘.` },
   ], { maxTokens: 12000, purpose: `trend-summary-${i + 1}`, timeoutMs: 180_000 });
-  const parts = await Promise.all(prompts.slice(0, 3).map((prompt, i) => runPart(prompt, i)));
+  const growthFacts = Object.entries(growth).map(([company, rows]) =>
+    `${COMPANY[company]}: ${rows.length ? rows.map(({ field, first, last, canInterpret }) =>
+      `${field} ${from}년 ${first}건 → ${to}년 ${last}건${canInterpret ? '' : ' (해석 보류)'}`).join(', ') : '늘어난 분야 없음'}`);
+  const timelineInput = `${facts}\n\n[출원 건수가 늘어난 분야]\n${growthFacts.join('\n')}`;
+  const parts = await Promise.all(prompts.slice(0, 3).map((prompt, i) => runPart(prompt, i, i === 1 ? timelineInput : facts)));
   const excerptInput = evidence.map((item) => ({
     출원번호: item.number, 명칭: item.title, 회사: item.company, 분야: item.field,
     문장: item.excerptSentences.map((text, index) => ({ 번호: index + 1, 원문: text })),
   }));
   const selection = await runPart(prompts[3], 3, `[원문 발췌 후보]\n${JSON.stringify(excerptInput)}`);
-  const answer = combineSummaryParts(parts);
+  const modelSections = readSummarySections(combineSummaryParts(parts));
+  // 이 섹션의 사실은 집계에서만 생성한다. 과거 형식의 모델 답변을 재처리할 때도 적용된다.
+  if (modelSections.has('성장 분야')) {
+    const text = modelSections.get('성장 분야');
+    const interpretation = text.split('\n').find((line) => /^- (?:\*\*)?해석:\s/.test(line));
+    modelSections.set('성장 분야', ['## 성장 분야', interpretation].filter(Boolean).join('\n'));
+  }
+  const answer = [...modelSections.values()].join('\n');
   const grounded = groundInterpretations(answer, evidence, validationStats);
   const sections = readSummarySections(grounded.content);
+  if (sections.has('성장 분야')) {
+    sections.set('성장 분야', renderGrowthSection(sections.get('성장 분야'), growth, evidence, from, to));
+  }
   const insights = buildSummaryInsights(sections, validationStats);
   sections.set('시사점', insights.text);
   const limitations = [

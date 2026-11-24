@@ -283,7 +283,30 @@ test('네 응답은 지정된 기존 항목만 기존 순서로 조합한다', (
   assert.doesNotMatch(answer, /원치 않는/);
 });
 
-test('통계와 원문 문장 선택을 별도로 요청하고 최종 본문에 원문 발췌를 저장한다', async () => {
+test('소표본 증가 판정은 전체 하위 분야의 첫해와 마지막 해 건수를 사용한다', () => {
+  db.exec('SAVEPOINT small_growth');
+  try {
+    const seed = (field, year) => add({ level1: '공통', level2: '설계', field, year });
+    seed('기타 설계', 2020);
+    seed('기타 설계', 2022);
+    seed('기타 설계', 2022);
+    seed('마이크로렌즈·광추출 구조', 2022);
+    seed('화소 배열·레이아웃', 2022);
+    seed('터치·센서', 2020);
+    const { growth } = buildSummaryInput({ level1: '공통', level2: '설계', from: 2020, to: 2022 });
+    assert.deepEqual(growth.own, [
+      { field: '기타 설계', first: 1, last: 2, change: null, canInterpret: false },
+      { field: '마이크로렌즈·광추출 구조', first: 0, last: 1, change: null, canInterpret: false },
+      { field: '화소 배열·레이아웃', first: 0, last: 1, change: null, canInterpret: false },
+    ]);
+    assert.deepEqual(growth.competitor, []);
+  } finally {
+    db.exec('ROLLBACK TO small_growth');
+    db.exec('RELEASE small_growth');
+  }
+});
+
+test('요약에 자체 집계한 성장 분야와 특허 원문 발췌를 저장한다', async () => {
   const originalFetch = globalThis.fetch;
   const oldBase = process.env.AI_BASE_URL;
   const oldModel = process.env.AI_MODEL;
@@ -301,12 +324,13 @@ test('통계와 원문 문장 선택을 별도로 요청하고 최종 본문에 
       const patentLines = evidence.slice(0, 4).map((item) => `- ${item.number} | 1`);
       const content = sent.length === 4
         ? ['## 주목 특허', ...patentLines, '## 한계', '- 버릴 한계', '## 시사점 및 제언', '- 버릴 시사점'].join('\n')
-        : `## 핵심 흐름\n- 자사 ${fields[0]} 2022년 41건\n- 삼성 ${fields[0]} 2022년 41건\n## 성장 분야\n## 경쟁사 동향`;
+        : `## 핵심 흐름\n- 자사 ${fields[0]} 2022년 41건\n- 삼성 ${fields[0]} 2022년 41건\n## 성장 분야\n- 자사: 늘어난 분야 없음\n## 경쟁사 동향`;
       return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
     };
     const result = await generateTrendSummary(scope);
     assert.equal(sent.length, 4);
     assert.ok(sent.slice(0, 3).every((request) => request.messages[1].content.includes('[구조화 통계:')));
+    assert.match(sent[1].messages[1].content, /\[출원 건수가 늘어난 분야\]/);
     assert.match(sent[3].messages[1].content, /\[원문 발췌 후보\]/);
     assert.doesNotMatch(sent[3].messages[1].content, /구조화 통계|\[앞 칸\]/);
     for (const { number } of evidence) assert.ok(sent.every((request) => request.messages[1].content.includes(number)));
@@ -318,8 +342,10 @@ test('통계와 원문 문장 선택을 별도로 요청하고 최종 본문에 
     assert.match(result.content, /급증 용어는 유사 초록 중복 제거/);
     assert.ok(result.content.length <= 1800);
     assert.deepEqual(result.checks.missingSections, ['핵심 메시지']);
-    assert.deepEqual(result.checks.insightSelection, { pair: 1, company: 0, field: 0, insufficient: 0 });
-    assert.match(result.content, /## 시사점\n- 확인해 볼 점: 삼성디스플레이의 화소 배열·레이아웃 출원을 살펴본다\.\n## 한계/);
+    assert.match(result.content, /## 성장 분야\n- 자사: .+ 2020년 \d+건 → 2022년 \d+건 \(증감률 \d+%\)\./);
+    assert.doesNotMatch(result.content, /자사: 늘어난 분야 없음/);
+    assert.deepEqual(result.checks.insightSelection, { pair: 2, company: 0, field: 0, insufficient: 0 });
+    assert.match(result.content, /## 시사점\n- 확인해 볼 점: 삼성디스플레이의 화소 배열·레이아웃 출원을 살펴본다\.\n- 확인해 볼 점: LG디스플레이의 .+ 출원을 살펴본다\.\n## 한계/);
     assert.doesNotMatch(result.content, /버릴 한계|버릴 시사점/);
     const displayed = result.content.split('## 주목 특허\n')[1].split('\n## 시사점')[0];
     assert.equal(displayed.split('\n').length, 3);
