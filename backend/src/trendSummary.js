@@ -6,10 +6,11 @@ import { db } from './db.js';
 import { getSummaryStats, MIN_COUNT, UNPUBLISHED_MONTHS } from './summaryStats.js';
 import { chat, isAiConfigured } from './ai.js';
 import { CRITERIA_VERSION } from './classification.js';
-import { checkSummary } from './summaryCheck.js';
+import { checkSummary, SECTIONS } from './summaryCheck.js';
 import { burstTerms } from './emerging.js';
 import { checkStatistics } from './summaryStatCheck.js';
 import { groundInterpretations } from './summaryEvidence.js';
+import { buildSummaryInsights } from './summaryInsights.js';
 
 const COMPANY = { own: '자사(LG디스플레이)', competitor: '경쟁사(삼성디스플레이)', china: '중국 경쟁사(BOE·CSOT·Tianma·Visionox)' };
 const EVIDENCE_LIMIT = 10;
@@ -204,7 +205,7 @@ export const SUMMARY_TASKS = [
   ['핵심 메시지'],
   ['핵심 흐름', '성장 분야'],
   ['경쟁사 동향'],
-  ['주목 특허', '시사점', '한계'],
+  ['주목 특허', '한계'],
 ];
 
 const PROMPT_FILES = ['01_stats.md', '02_timeline.md', '03_competitors.md', '04_evidence.md'];
@@ -213,11 +214,22 @@ export function splitSummaryPrompt() {
   return PROMPT_FILES.map((name) => readFileSync(new URL('../prompts/' + name, import.meta.url), 'utf8').trimEnd());
 }
 
-// 지정된 항목만 조립한다. 모델이 항목을 누락하면 기존 검사에서 누락으로 표시한다.
+function readSummarySections(text) {
+  const sections = new Map();
+  for (const chunk of text.split(/(?=^[ \t]*#{1,6}(?:[ \t]|$))/m)) {
+    const heading = chunk.split('\n', 1)[0].trim().match(/^##[ \t]+(.+?)\s*$/)?.[1];
+    if (!heading) continue;
+    const title = heading === '핵심 흐름 (3줄)' ? '핵심 흐름' : heading;
+    if (!sections.has(title)) sections.set(title, chunk.trim());
+  }
+  return sections;
+}
+
+// 각 응답에서 허용한 제목과 그 본문만 가져온다.
 export function combineSummaryParts(answers) {
   return SUMMARY_TASKS.flatMap((names, i) => {
-    const chunks = (answers[i] ?? '').split(/(?=^##\s)/m);
-    return names.map((name) => chunks.find((chunk) => chunk.split('\n', 1)[0].replace(/^##\s*/, '').startsWith(name))?.trim()).filter(Boolean);
+    const sections = readSummarySections(answers[i] ?? '');
+    return names.map((name) => sections.get(name)).filter(Boolean);
   }).join('\n');
 }
 
@@ -234,26 +246,37 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
   }
   const started = Date.now();
   const prompts = splitSummaryPrompt();
-  const runPart = (prompt, i, earlier = '') => chat([
+  const runPart = (prompt, i) => chat([
     { role: 'system', content: prompt },
-    { role: 'user', content: `[자료]\n${facts}${earlier ? `\n\n[앞 칸]\n${earlier}` : ''}\n\n위 자료로 동향 요약을 써 줘. 이 요청에서는 제시된 항목만 작성해 줘.` },
+    { role: 'user', content: `[자료]\n${facts}\n\n위 자료로 동향 요약을 써 줘. 이 요청에서는 제시된 항목만 작성해 줘.` },
   ], { maxTokens: 12000, purpose: `trend-summary-${i + 1}`, timeoutMs: 180_000 });
   const parts = await Promise.all(prompts.slice(0, 3).map((prompt, i) => runPart(prompt, i)));
-  parts.push(await runPart(prompts[3], 3, combineSummaryParts(parts)));
+  parts.push(await runPart(prompts[3], 3));
   const answer = combineSummaryParts(parts);
   const grounded = groundInterpretations(answer, evidence, validationStats);
-  let content = grounded.content;
+  const sections = readSummarySections(grounded.content);
+  const insights = buildSummaryInsights(sections, validationStats);
+  sections.set('시사점', insights.text);
+  const missingSections = SECTIONS.filter((name) => !sections.has(name));
   const limitations = [
     ...(dataWarnings.some((warning) => warning.includes(`기존 주의 기준 ${MIN_COUNT}건 미만`)) ? ['- 일부 회사·분야·연도의 출원 건수가 30건 미만이므로 동향 해석에 주의가 필요합니다. 30건은 기존 주의 기준이며 통계적 유의성을 뜻하지 않습니다.'] : []),
     ...(evidence.length < 4 ? [`- 근거 후보 특허가 ${evidence.length}건으로 부족할 수 있어 기술 동향 판단에 한계가 있습니다.`] : []),
     '- 출원 건수는 출원번호 기준이며, 급증 용어는 유사 초록 중복 제거 후 문서 수를 기준으로 합니다.',
   ];
-  if (/^##\s*한계[^\n]*$/m.test(content)) {
-    content = content.replace(/^##\s*한계[^\n]*$/m, (header) => `${header}\n${limitations.join('\n')}`);
-  } else {
-    content += `\n## 한계\n${limitations.join('\n')}`;
-  }
+  const limitationLines = sections.get('한계')?.split('\n').slice(1) ?? [];
+  sections.set('한계', ['## 한계', ...limitations, ...limitationLines].join('\n'));
+  const content = SECTIONS.map((name) => sections.get(name)).filter(Boolean).join('\n');
   const checks = checkSummary(grounded.content, statText, evidence, { finalLength: content.length });
+  checks.missingSections = missingSections;
+  checks.insightSelection = insights.counts;
+  const rawSections = readSummarySections(answer);
+  const interpretation = /시사(?:한|하|된|점)|필요(?:가\s*있|하(?:다|며|다는))|전망|예상(?:된|한|하)|바람직/;
+  for (const title of ['주목 특허', '한계']) {
+    const lines = (rawSections.get(title) ?? '').split('\n').slice(1);
+    for (const line of lines.filter((line) => interpretation.test(line))) {
+      checks.overreach.push(`${title}의 해석·제언 표현 확인 필요: ${line.trim().slice(0, 90)}`);
+    }
+  }
   Object.assign(checks, checkStatistics(answer, validationStats));
   checks.evidenceWarnings = [...grounded.warnings, ...(evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [])];
   checks.foreignText = grounded.foreignText;

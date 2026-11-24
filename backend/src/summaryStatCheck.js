@@ -10,9 +10,9 @@
 //   (그대로 두면 288건 앞의 마지막 연도인 2022년을 288건의 연도로 잘못 짝지었다. 2026-11-21 배포 요약)
 // - "30건 미만" 같은 기준 숫자, "중국 4사", 연도 범위(2022~2024년)는 대조하지 않는다
 const ALIASES = {
-  own: /자사|LG(?:디스플레이)?/gi,
-  competitor: /삼성(?:디스플레이)?|(?<!중국\s)경쟁사/g,
-  china: /중국|BOE|CSOT|Tianma|Visionox/gi,
+  own: /자사|\bLG(?:\s*디스플레이|\s+Display\b)?(?:\s*\(주\))?/gi,
+  competitor: /삼성(?:\s*디스플레이)?(?:\s*\(주\))?|\bSamsung\s+Display\b|(?<!중국[ \t]*)경쟁사/gi,
+  china: /중국(?:[ \t]*(?:4[ \t]*사|경쟁사))?|BOE|CSOT|Tianma|Visionox/gi,
 };
 const ARROW = /(?:(\d{4})\s*년\s*)?(\d+)\s*건?\s*(?:→|->)\s*(?:(\d{4})\s*년\s*)?(\d+)\s*건?/g;
 
@@ -88,33 +88,83 @@ function claimsIn(piece, stats, changeAllowed, problems, earlierYear, lineIsChan
   return claims;
 }
 
+function lookupStatistic(stats, company, field, year, metric) {
+  if (metric === 'changeRank') {
+    const ranked = stats.values.filter((v) => v.company === company && v.year === year
+      && v.metric === 'change' && v.value !== null && stats.fields.includes(v.field))
+      .sort((a, b) => b.value - a.value);
+    const index = ranked.findIndex((v) => v.field === field);
+    return index < 0 ? undefined : { value: index + 1 };
+  }
+  return stats.values.find((v) => v.company === company && v.field === field && v.year === year && v.metric === metric);
+}
+
+const normalizeCountYears = (line) => line
+  .replace(/(\d),(?=\d{3}(?!\d))/g, '$1')
+  .replace(/(\d+)\s*건\s*\(\s*(\d{4})\s*년\s*(\)|,\s*)/g, (_, n, y, rest) => `${y}년 ${n}건${rest === ')' ? '' : '('}`);
+
+const UNSTATED_OR_EXCLUDED = /확인\s*(?:되지\s*않|할\s*수\s*없|불가|못)|미확인|제외|누락|부재|미포함|아닌|(?:출원|건수|자료|근거|분야)(?:[이가은는도]\s*|\s+)(?:없|부족)|집계\s*대상(?:이\s*아니|에서\s*빠)/;
+const STAT_METRIC = /\d\s*(?:건|%|위)|(?:→|->)\s*\d/;
+
+/** 한 문장에서 주체와 수치가 모두 확인된 경우에만 시사점에 쓸 집계 주체를 돌려준다. */
+export function verifiedStatisticSubject(raw, stats) {
+  const line = raw.trim().replace(/^[-*]\s+/, '');
+  if (/^\[|^\**해석\s*:|[.!?。！？;]\s+\S|\d{13}|반면|각각|보다|비교해/.test(line)
+    || UNSTATED_OR_EXCLUDED.test(line)) return null;
+  const mentions = mentionsIn(line, stats);
+  const companies = [...new Set(mentions.filter((m) => m.type === 'company').map((m) => m.value))];
+  const fields = [...new Set(mentions.filter((m) => m.type === 'field').map((m) => m.value))];
+  if (companies.length > 1 || fields.length > 1 || !mentions.length) return null;
+  const [company = null] = companies;
+  const [field = null] = fields;
+  // BOE 등 개별 기업의 숫자를 중국 경쟁사 합계로 검증하지 않는다.
+  if (company === 'china' && !/중국/.test(line)) return null;
+  const scope = field ?? stats.totalField ?? (stats.fields.length === 1 && stats.fields[0] === '전체' ? '전체' : null);
+  if (!scope) return null;
+
+  // 분류명 속 3D나 8.6세대처럼 정식 이름에 포함된 숫자는 통계 주장이 아니다.
+  const masked = line.split('');
+  for (const { idx, end } of mentions) masked.fill(' ', idx, end);
+  const subjectEnd = Math.max(
+    mentions.find((m) => m.type === 'company')?.end ?? 0,
+    mentions.find((m) => m.type === 'field')?.end ?? 0,
+  );
+  const prefix = masked.slice(0, subjectEnd).join('');
+  if (STAT_METRIC.test(prefix)) return null;
+  if (!company && !/^(?:\s|\d{4}\s*년|전체|합계|합산|분야|[:：()·*])+$/u.test(prefix)) return null;
+  const text = normalizeCountYears(masked.join(''));
+  const years = [...text.matchAll(/(\d{4})\s*년/g)].map((match) => Number(match[1]));
+  const periodMatches = new Set(years).size === 2 && years.includes(stats.from) && years.includes(stats.to);
+  const explicitChangePeriod = !years.length || periodMatches;
+  const problems = [];
+  const claims = claimsIn(text, stats, explicitChangePeriod, problems, null, false);
+  if (!claims.length || problems.length || claims.some((claim) => claim.newSubject || claim.laterSentence)) return null;
+  if (!claims.every(({ metric, year, value }) => {
+    if (company) return lookupStatistic(stats, company, scope, year, metric)?.value === value;
+    // 분야 단독은 회사별 건수가 모두 있는 경우에만 해당 분야의 합계로 확인한다.
+    if (metric !== 'count') return false;
+    const counts = Object.keys(ALIASES).map((key) => lookupStatistic(stats, key, scope, year, metric)?.value);
+    return counts.every(Number.isInteger) && counts.reduce((sum, count) => sum + count, 0) === value;
+  })) return null;
+  return { company, field, hasActivity: claims.some(({ metric, value }) => metric !== 'count' || value > 0) };
+}
+
 export function checkStatistics(answer, stats) {
   const statMismatches = [];
   const statUnverified = [];
-  const lookup = (company, field, year, metric) => {
-    if (metric === 'changeRank') {
-      const ranked = stats.values.filter((v) => v.company === company && v.year === year
-        && v.metric === 'change' && v.value !== null && stats.fields.includes(v.field))
-        .sort((a, b) => b.value - a.value);
-      const index = ranked.findIndex((v) => v.field === field);
-      return index < 0 ? undefined : { value: index + 1 };
-    }
-    return stats.values.find((v) => v.company === company && v.field === field && v.year === year && v.metric === metric);
-  };
   const defaultField = stats.totalField ?? (stats.fields.length === 1 && stats.fields[0] === '전체' ? '전체' : null);
 
   let section = '';
   for (const raw of answer.split('\n')) {
     if (/^\s*##/.test(raw)) { section = raw; continue; }
     if (/한계|주목 특허/.test(section)) continue;
-    const line = raw
+    const line = normalizeCountYears(raw
       .replace(/\d{13}/g, '')
-      .replace(/(\d),(?=\d{3}(?!\d))/g, '$1')
       .replace(/\d+\s*건\s*(?:미만|이상|이하|초과)/g, '')
       .replace(/중국\s*4\s*사/g, '중국')
       .replace(/자료 범위\s*\([^)]*\)/g, '')
       .replace(/\d{4}\s*[~–-]\s*\d{4}\s*년(?!\s*(?:모든 해|모두|연간|매년)\s*\d+\s*건)/g, '')
-      .replace(/(\d+)\s*건\s*\(\s*(\d{4})\s*년\s*(\)|,\s*)/g, (_, n, y, rest) => `${y}년 ${n}건${rest === ')' ? '' : '('}`);
+    );
     if (!/\d/.test(line.replace(/\d{4}\s*년/g, ''))) continue;
 
     const lineYears = [...line.matchAll(/(\d{4})\s*년/g)].map((m) => Number(m[1]));
@@ -182,13 +232,14 @@ export function checkStatistics(answer, stats) {
       const carriedAmbiguous = (!companyDirect && lineCompanies.size > 1) || (!fieldDirect && lineFields.size > 1);
       for (const c of claims) {
         if (c.newSubject) { problems.push('새 문장 주제의 분야를 알 수 없음'); continue; }
-        const fact = lookup(company, f, c.year, c.metric);
+        const fact = lookupStatistic(stats, company, f, c.year, c.metric);
         if (!fact || fact.value === null) { problems.push(`대응 통계 없음(${f} ${c.year}년)`); continue; }
         if (fact.value === c.value) continue;
         if (carriedAmbiguous || (c.laterSentence && lineCompanies.size > 1)) problems.push('누구의 숫자인지 확인 필요(앞 문장에서 이어받음)');
         else mismatches.push(`${company} / ${f} / ${c.year} / ${c.metric}: 요약 ${c.value}, 통계 ${fact.value}`);
       }
     }
+    if (!mismatches.length && problems.length && verifiedStatisticSubject(raw, stats)) continue;
     for (const m of mismatches) statMismatches.push(`${m} — ${raw.trim()}`);
     if (problems.length) statUnverified.push(`${[...new Set(problems)].join(', ')}: ${raw.trim()}`);
   }
