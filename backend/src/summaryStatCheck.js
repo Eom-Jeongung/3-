@@ -69,12 +69,16 @@ function percentageReading(text, start, end, stats, { earlierYear = null, contex
   const yearConflict = attachedYear !== null && inheritedYear != null && attachedYear !== inheritedYear;
   const beforePeriod = [...(context + before).matchAll(/(\d{4})\s*년?\s*(?:대비|부터|[~–-])\s*(\d{4})\s*년/g)].at(-1);
   const afterPeriod = after.match(/^\s*\(\s*(\d{4})\s*년?\s*(?:대비|부터|[~–-])\s*(\d{4})\s*년\s*\)/);
-  const period = afterPeriod ?? beforePeriod;
+  // 건수가 있는 원문과, 건수 대조 후 연도만 남긴 조각 모두에서 방향을 보존한다.
+  const arrowPeriod = [...(context + text.slice(0, start)).matchAll(/(\d{4})\s*년\s*(?:\d+\s*건?\s*)?(?:→|->)\s*(\d{4})\s*년/g)].at(-1);
+  const period = afterPeriod ?? beforePeriod ?? arrowPeriod;
+  const differs = (left, right) => left && right && (left[1] !== right[1] || left[2] !== right[2]);
   return { metric: conflictingMetric ? null : metric,
     year: yearConflict ? null : attachedYear ?? inheritedYear ?? stats.to,
     yearConflict,
     period: period ? [Number(period[1]), Number(period[2])] : null,
-    periodConflict: Boolean(beforePeriod && afterPeriod && (beforePeriod[1] !== afterPeriod[1] || beforePeriod[2] !== afterPeriod[2])),
+    periodSource: afterPeriod || beforePeriod ? 'explicit' : arrowPeriod ? 'arrow' : null,
+    periodConflict: Boolean(differs(beforePeriod, afterPeriod) || differs(arrowPeriod, period)),
     decrease: /감소율/.test(leading ?? trailing ?? '') || /감소|하락|줄/.test(after.slice(0, 12)),
   };
 }
@@ -102,10 +106,12 @@ function claimsIn(piece, stats, changeAllowed, problems, earlierYear, lineIsChan
   text = text.replace(ARROW, (_, y1, n1, y2, n2, offset, str) => {
     const laterSentence = /[.。]\s/.test(str.slice(0, offset));
     const newSubject = hasNewSubject(str.slice(0, offset));
-    claims.push({ metric: 'count', year: y1 ? Number(y1) : stats.from, value: Number(n1), laterSentence, newSubject });
+    const precedingPeriod = [...(context + str.slice(0, offset)).matchAll(/(\d{4})\s*년?\s*(?:대비|부터|[~–-])\s*(\d{4})\s*년/g)].at(-1);
+    const firstYear = y1 ? Number(y1) : precedingPeriod ? Number(precedingPeriod[1]) : earlierYear ?? stats.from;
+    claims.push({ metric: 'count', year: firstYear, value: Number(n1), laterSentence, newSubject });
     claims.push({ metric: 'count', year: y2 ? Number(y2) : stats.to, value: Number(n2), laterSentence, newSubject });
     // 건수는 대조했지만, 뒤의 비중이 참조할 수 있도록 명시 연도는 남긴다.
-    return [y1 && `${y1}년`, y2 && `${y2}년`].filter(Boolean).join(' ') + ' ';
+    return `${firstYear}년 → ${y2 ?? stats.to}년 `;
   });
   // "전체 147건의 88%"는 분야의 비중과 회사 전체의 건수 두 주장이다.
   text = text.replace(/(?:회사\s*)?전체(?:\s*출원)?\s+(\d+)\s*건의\s*(\d+(?:\.\d+)?)\s*%/g,
@@ -220,12 +226,18 @@ function separateComparison(line, stats) {
 const UNSTATED_OR_EXCLUDED = /확인\s*(?:되지\s*않|할\s*수\s*없|불가|못)|미확인|제외|누락|부재|미포함|아닌|(?:출원|건수|자료|근거|분야)(?:[이가은는도]\s*|\s+)(?:없|부족)|집계\s*대상(?:이\s*아니|에서\s*빠)/;
 const STAT_METRIC = /\d\s*(?:건|%|위)|(?:→|->)\s*\d/;
 
+// 해석을 보류한다는 단서와 출원 자료 자체의 부재는 다르다. 건수 주장은 뒤에서 그대로 검증한다.
+function absenceClaimText(line) {
+  if (!/소표본|\d+\s*건\s*(?:미만|이하)|표본[이가]?\s*(?:적|부족)/.test(line)) return line;
+  return line.replace(/(?:추세|증감률)(?:에\s*대한|의|은|는)?\s*(?:(?:판단|해석|계산|산출)(?:의|을|를|은|는)?\s*)?(?:(?:근거|자료)[가은는]?\s*)?(?:확인\s*(?:되지\s*않|할\s*수\s*없|불가|못)|부족)/g, '해석 보류');
+}
+
 /** 한 문장에서 주체와 수치가 모두 확인된 경우에만 시사점에 쓸 집계 주체를 돌려준다. */
 export function verifiedStatisticSubject(raw, stats) {
   stats = withAggregateStatistics(stats);
   const line = raw.trim().replace(/^[-*]\s+/, '');
   if (/^\[|^\**해석\s*:|[.!?。！？;]\s+\S|\d{13}|반면|각각|보다|비교해/.test(line)
-    || UNSTATED_OR_EXCLUDED.test(line)) return null;
+    || UNSTATED_OR_EXCLUDED.test(absenceClaimText(line))) return null;
   const mentions = mentionsIn(line, stats);
   const companies = [...new Set(mentions.filter((m) => m.type === 'company').map((m) => m.value))];
   const fields = [...new Set(mentions.filter((m) => m.type === 'field').map((m) => m.value))];
@@ -247,7 +259,8 @@ export function verifiedStatisticSubject(raw, stats) {
   const prefix = masked.slice(0, subjectEnd).join('');
   if (STAT_METRIC.test(prefix)) return null;
   if (!company && !/^(?:\s|\d{4}\s*년|전체|합계|합산|분야|[:：()·*])+$/u.test(prefix)) return null;
-  const text = normalizeCountYears(masked.join(''), stats);
+  const text = normalizeCountYears(masked.join(''), stats)
+    .replace(/\d+\s*건\s*(?:미만|이상|이하|초과)/g, '');
   const years = [...text.matchAll(/(\d{4})\s*년/g)].map((match) => Number(match[1]));
   const periodMatches = new Set(years).size === 2 && years.includes(stats.from) && years.includes(stats.to);
   const explicitChangePeriod = !years.length || periodMatches;

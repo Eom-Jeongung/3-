@@ -16,6 +16,38 @@ for (const [company, group, first, last, share] of [
 }
 const stats = { from: 2020, to: 2022, fields: [field, other], values };
 
+test('화살표의 시작·끝 연도를 보존하여 역순 증감률과 모순된 기간을 승인하지 않는다', () => {
+  const scoped = { from: 2023, to: 2024, fields: [field], values: [
+    { company: 'own', field, year: 2023, metric: 'count', value: 70 },
+    { company: 'own', field, year: 2024, metric: 'count', value: 135 },
+    { company: 'own', field, year: 2024, metric: 'change', value: 93 },
+  ] };
+  const forward = `자사 ${field} 2023년 70건 → 2024년 135건, 증감률 93%`;
+  assert.deepEqual(checkStatistics(forward, scoped), { statMismatches: [], statUnverified: [] });
+  assert.ok(verifiedStatisticSubject(forward, scoped));
+  const sharedPeriod = `2023년 대비 2024년에 자사 ${field} 70건→135건, 증감률 93%`;
+  assert.deepEqual(checkStatistics(sharedPeriod, scoped), { statMismatches: [], statUnverified: [] });
+  for (const arrow of ['→', '->']) {
+    for (const rate of ['93%', '-48%']) {
+      for (const line of [
+        `자사 ${field} 2024년 135건 ${arrow} 2023년 70건, 증감률 ${rate}`,
+        `2024년 자사 ${field} 135건 ${arrow} 2023년 70건, 증감률 ${rate}`,
+      ]) {
+        const result = checkStatistics(line, scoped);
+        assert.deepEqual(result.statMismatches, []);
+        assert.equal(result.statUnverified.length, 1, line);
+        assert.equal(verifiedStatisticSubject(line, scoped), null);
+      }
+    }
+  }
+  const conflict = `자사 ${field} 2024년 135건 → 2023년 70건, 2023년 대비 2024년 증감률 93%`;
+  assert.equal(checkStatistics(conflict, scoped).statUnverified.length, 1);
+  assert.equal(verifiedStatisticSubject(conflict, scoped), null);
+  assert.equal(checkStatistics(forward.replace('93%', '94%'), scoped).statMismatches.length, 1);
+  const countsOnly = `자사 ${field} 2024년 135건 → 2023년 70건`;
+  assert.deepEqual(checkStatistics(countsOnly, scoped), { statMismatches: [], statUnverified: [] });
+});
+
 test('괄호 연도와 분모의 연도를 보존하고 다른 해의 값으로 바꾼 대조 문장을 거부한다', () => {
   const scoped = { from: 2023, to: 2024, fields: [field], totalField: '회로', values: [
     { company: 'own', field, year: 2024, metric: 'share', value: 29 },

@@ -82,6 +82,14 @@ test('역순 기간과 비중이 함께 있는 문장의 기간 생략·건수 �
   assert.ok(result.parts[2].issues.some(({ type }) => type === 'countOnlyShare'));
 });
 
+test('역순 화살표의 증감률은 잘못된 비교 기간으로 기록한다', () => {
+  const parts = [...base.parts];
+  parts[0] = '## 핵심 메시지\n- 삼성 구동 회로 2024년 50건 → 2022년 30건, 증감률 67%';
+  const result = summaryQuality({ ...base, parts, finalContent: '', finalSources: [] });
+  const issue = result.parts[0].issues.find(({ type }) => type === 'invalidChangePeriod');
+  assert.deepEqual(issue.period, [2024, 2022]);
+});
+
 test('특허 인용의 분야명은 통계 주체에 섞지 않고 중국 뒤의 순위를 별도로 기록한다', () => {
   const parts = [...base.parts];
   parts[2] = '## 경쟁사 동향\n- 해석: 삼성 구동 회로 2022년 30건 → 2024년 50건 | 1020240000001 | 「전원 회로 및 회로를 포함한다」\n- 삼성 구동 회로 2024년 비중 34%이며 중국 구동 회로 2024년 0건이다.\n- 중국 구동 회로 2024년 1위';

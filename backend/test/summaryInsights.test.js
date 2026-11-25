@@ -15,6 +15,31 @@ const stats = {
 };
 const insights = (...lines) => buildSummaryInsights(new Map([['핵심 흐름', lines.join('\n')]]), stats);
 
+test('소표본 주의 기준과 해석 보류는 정확한 건수의 시사점 근거를 무효화하지 않는다', () => {
+  const scoped = { from: 2022, to: 2023, fields: ['터치·센서'], totalField: '설계', minimumSample: 30, values: [
+    { company: 'own', field: '터치·센서', year: 2022, metric: 'count', value: 26 },
+    { company: 'own', field: '터치·센서', year: 2023, metric: 'count', value: 3 },
+    { company: 'own', field: '터치·센서', year: 2023, metric: 'change', value: null },
+  ] };
+  const prefix = '- 자사(LG디스플레이) 터치·센서 출원은 2022년 26건 → 2023년 3건이며, ';
+  const run = (line) => buildSummaryInsights(new Map([['핵심 메시지', line]]), scoped);
+  for (const caveat of [
+    '첫해와 마지막 해 모두 30건 미만이라 증감률은 제시하지 않는다.',
+    '소표본이라 추세를 단정하지 않는다.',
+    '소표본이라 추세 판단의 근거가 부족하다.',
+    '소표본이라 증감률은 확인할 수 없다.',
+  ]) {
+    const result = run(prefix + caveat);
+    assert.deepEqual(result.counts, { pair: 1, company: 0, field: 0, insufficient: 0 }, caveat);
+    assert.equal(result.text, '## 시사점\n- 확인해 볼 점: LG디스플레이의 터치·센서 출원을 살펴본다.');
+  }
+  for (const caveat of ['소표본이며 출원 건수는 확인되지 않았다.', '소표본이며 자료가 부족하다.', '집계에서 제외했다.']) {
+    assert.equal(run(prefix + caveat).counts.insufficient, 1, caveat);
+  }
+  assert.equal(run((prefix + '소표본이라 추세를 단정하지 않는다.').replace('26건', '27건')).counts.insufficient, 1);
+  assert.equal(run(prefix + '소표본이지만 증감률 93%다.').counts.insufficient, 1);
+});
+
 test('회사나 분야가 여럿이거나 부재를 말하거나 검증할 수치가 없으면 후보에 넣지 않는다', () => {
   const lines = [
     `- 삼성과 자사의 ${field} 및 ${other} 출원은 2024년 60건이다.`,

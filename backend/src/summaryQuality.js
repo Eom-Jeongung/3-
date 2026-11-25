@@ -49,6 +49,7 @@ export function summaryQuality({ prompts, parts, tasks, finalContent, stats, ins
               const period = reading.period;
               if (!period) add('missingChangePeriod', text, sentence);
               else if (reading.periodConflict || period[0] !== stats.from || period[1] !== stats.to) add('invalidChangePeriod', text, sentence, { period });
+              else if (reading.periodSource === 'arrow') add('missingChangePeriod', text, sentence);
             }
             if (reading.metric === 'share' && !interpretation) add('countOnlyShare', text, sentence);
             if (chinaCountOnly && statisticCompanyAt(statistical, reading.start, stats) === 'china') add('chinaNonCountMetric', text, sentence);
@@ -63,7 +64,7 @@ export function summaryQuality({ prompts, parts, tasks, finalContent, stats, ins
   });
   return {
     schemaVersion: 2,
-    checkerVersion: 'per-number-source-v2',
+    checkerVersion: 'arrow-sample-v3',
     promptVersion: createHash('sha256').update(JSON.stringify(prompts)).digest('hex'),
     // 요약 수와 내부 요청 수를 각각 분모로 쓸 수 있도록 분리한다.
     requestCount: parts.length,
