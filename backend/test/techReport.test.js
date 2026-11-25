@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 process.env.DB_PATH = ':memory:';
 const { db } = await import('../src/db.js');
-const { splitPeriods, parseJsonAnswer, checkStatement, checkPatentAnalysis, missingTerms, unsupportedEffects, latestTechReport, listTechReports } = await import('../src/techReport.js');
+const { splitPeriods, parseJsonAnswer, checkStatement, checkPatentAnalysis, missingTerms, unsupportedEffects, reversedDoping, guessedPurpose, latestTechReport, listTechReports } = await import('../src/techReport.js');
 
 test('원문에 없는 용어 찾기: 띄어쓰기·대소문자는 무시하고, 없는 영어 약어는 걸린다', () => {
   const source = '제1 발광 스택과 제2 발광스택 사이에 전하 생성층을 둔다. OLED';
@@ -73,4 +73,30 @@ test('기술 분석은 건수 요약과 다른 표(tech_reports)에 저장하고
   assert.equal(latestTechReport(scope).report.headline, '보고서');
   assert.equal(listTechReports(null).length, 1);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM trend_summaries').get().n, 0);
+});
+
+// 2026-11-25 천안 실제 생성(#8·#9) 검증에서 나온 사례
+test('괄호 속 약어 키워드는 원문에 따로 있으면 통과하고, 원문에 없는 말을 붙이면 걸린다', () => {
+  const source = '광의 피크 파장의 반치폭(Full Width at Half Maximum; FWHM)은 26nm 내지 36nm이다.';
+  assert.deepEqual(missingTerms(['반치폭(FWHM)', '피크 파장'], source), []);
+  assert.deepEqual(missingTerms(['구동 모드'], '제1 모드 또는 제2 모드로 영상을 표시하는 표시 패널'), ['구동 모드']);
+});
+
+test('도핑 관계가 원문과 뒤바뀌면 찾는다', () => {
+  const source = '상기 제2전극은 11족 금속에 무기물이 도핑되어 있고, 전자 주입층이 위치한다.';
+  assert.deepEqual(reversedDoping('삼성은 11족 금속을 도핑한 제2전극을 쓰는 구조를 다뤘다.', source), ['금속']);
+  assert.deepEqual(reversedDoping('삼성은 11족 금속에 무기물을 도핑한 제2전극을 다뤘다.', source), []);
+  assert.deepEqual(reversedDoping('무기물이 도핑된 제2전극', source), []);
+  // 원문에서 도핑 물질로 쓰인 말은 걸리지 않는다
+  assert.deepEqual(reversedDoping('붕소를 도핑한 층', '실리콘에 붕소를 도핑하고, 붕소가 도핑된 층'), []);
+  assert.deepEqual(checkPatentAnalysis({ topic: '11족 금속을 도핑한 전극', keywords: [] }, source),
+    ['원문과 도핑 관계가 다름: 원문은 "금속에 … 도핑"']);
+});
+
+test('인용 특허 목적이 모두 (추정)인데 목적을 단정하듯 쓰면 표시한다', () => {
+  const text = '게이트 구동부가 전원 배선을 공유하며, 배선을 줄이기 위한 것으로 보인다.';
+  assert.equal(guessedPurpose(text, [{ inferred: true }, { inferred: true }]), true);
+  assert.equal(guessedPurpose(text, [{ inferred: true }, { inferred: false }]), false);
+  assert.equal(guessedPurpose('게이트 구동부가 전원 배선을 공유한다.', [{ inferred: true }]), false);
+  assert.equal(guessedPurpose(text, []), false);
 });

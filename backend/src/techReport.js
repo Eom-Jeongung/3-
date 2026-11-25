@@ -105,8 +105,45 @@ export function missingTerms(terms, source) {
   const plain = norm(source);
   // 통째로 있거나, 띄어 쓴 낱말이 모두 원문에 있으면 통과한다
   // ("개구 직경" ← 원문 "개구의 직경", "곡률 모서리" ← 원문 "곡률을 갖는 모서리"처럼 조사를 줄인 말은 오류가 아니다)
-  const found = (t) => plain.includes(norm(t)) || t.trim().split(/\s+/).every((w) => plain.includes(norm(w)));
+  // 괄호 속 약어도 따로 본다 (2026-11-25: "반치폭(FWHM)" ← 원문 "반치폭(Full Width at Half Maximum; FWHM)")
+  const found = (t) => plain.includes(norm(t)) || t.trim().split(/[\s()（）\[\];；,，]+/).filter(Boolean).every((w) => plain.includes(norm(w)));
   return (terms ?? []).map(String).filter((t) => t.trim() && !found(t));
+}
+
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * 도핑 관계가 원문과 뒤바뀐 말 찾기
+ * 글에서 "X을/를/이/가 도핑"으로 X를 도핑하는 물질로 썼는데, 원문에는 "X에 … 도핑"(X가 바탕 물질)만 있으면 걸린다
+ * 2026-11-25 검증: 원문 "11족 금속에 무기물이 도핑" → AI "11족 금속을 도핑한 제2전극"
+ */
+export function reversedDoping(text, source) {
+  const src = String(source ?? '');
+  const hits = [];
+  for (const [, x] of String(text ?? '').matchAll(/([가-힣A-Za-z0-9]{2,})\s*(?:을|를|이|가)\s*도핑/g)) {
+    const e = escapeRe(x);
+    const asHost = new RegExp(`${e}\\s*에\\s*[^.。]{0,30}?도핑`).test(src);
+    const asDopant = new RegExp(`${e}\\s*(?:을|를|이|가|으로|로)\\s*[^.。]{0,30}?도핑`).test(src);
+    if (asHost && !asDopant) hits.push(x);
+  }
+  return [...new Set(hits)];
+}
+
+/**
+ * 목적을 추정한 문장인데 인용한 특허 원문 어디에도 목적이 없는 경우 (특허 분석의 목적이 모두 "(추정)")
+ * 예: "배선을 줄이기 위한 것으로 보인다" ← 인용 특허 목적이 모두 (추정)
+ */
+export function guessedPurpose(text, cited) {
+  const t = String(text ?? '');
+  return /보인다|보임/.test(t) && /위한|위해|목적|하려/.test(t) && cited.length > 0 && cited.every((p) => p.inferred);
+}
+
+/** 문장 하나의 원문 대조 이유 (도핑 관계, 목적 추정) */
+function sourceReasons(text, cited, source) {
+  const doping = reversedDoping(text, source);
+  return [
+    ...(doping.length ? [`원문과 도핑 관계가 다름: 원문은 "${doping.join(', ')}에 … 도핑"`] : []),
+    ...(guessedPurpose(text, cited) ? ['원문에 목적이 없는 특허로 목적을 추정함'] : []),
+  ];
 }
 
 /**
@@ -126,6 +163,8 @@ export function checkPatentAnalysis(item, source) {
   if (effects.length) reasons.push(`원문에 없는 효과: ${effects.join(', ')}`);
   const strangeKw = missingTerms(item.keywords, source);
   if (strangeKw.length) reasons.push(`원문에 없는 키워드: ${strangeKw.join(', ')}`);
+  const doping = reversedDoping(`${item.theme ?? ''} ${written} ${purpose}`, source);
+  if (doping.length) reasons.push(`원문과 도핑 관계가 다름: 원문은 "${doping.join(', ')}에 … 도핑"`);
   return reasons;
 }
 
@@ -307,10 +346,12 @@ const FLOW_PROMPT = [
   '- 시기마다 stage(그 시기 기술 단계 이름, 10자 이내), title(기술 주제 + 목적, 25자 안팎), points 정확히 2개, keywords 3개를 쓴다.',
   '- stage와 title은 그 칸 points 2개의 내용을 묶어 쓴다. points에 없는 주제를 제목에 넣지 않는다.',
   '- stage와 title에 목적·효과(신뢰성, 성능, 효율 등)를 쓰려면 그 말이 points의 근거 특허 원문(purpose 중 "(추정)"이 아닌 것)에 있어야 한다. "(추정)" 목적은 제목에 쓰지 않는다.',
-  '- point는 "누가(자사·삼성·중국 4사) 어떤 기술을 무엇을 위해 다뤘는지" 한 문장이다.',
+  '- point는 "누가(자사·삼성·중국 4사) 어떤 기술을 다뤘는지" 한 문장이다. 목적은 그 point 근거 특허의 purpose 중 "(추정)"이 아닌 것이 있을 때만 그 내용대로 덧붙인다.',
   '- refs에는 그 point에 나온 내용의 근거 특허 번호(no)를 빠짐없이 넣는다(최대 4개). 문장에 쓴 특허 내용마다 그 특허 번호가 refs에 있어야 한다.',
   '- 앞 시기와 달라진 점이 드러나게 쓴다. 같은 말을 시기마다 반복하지 않는다.',
-  '- [특허 분석]의 purpose에 "(추정)"이 붙은 내용을 쓸 때는 문장에 "~로 보인다"를 붙인다.',
+  // 2026-11-25: 예전에는 (추정) 목적을 "~로 보인다"로 쓰게 했는데, 원문에 없는 목적이 흐름 문장 절반 이상에 들어가 바꿈
+  '- purpose에 "(추정)"이 붙은 특허만 근거로 든 point에는 목적을 쓰지 않는다("~를 위한 것으로 보인다", "목적은 ~" 금지). 무엇을 어떻게 바꿨는지만 원문 관계 그대로 쓴다.',
+  '- 특허 내용을 옮길 때 재료·위치 관계를 뒤집지 않는다. 예: 원문 "A에 B가 도핑"을 "A를 도핑한"으로 바꾸지 않는다.',
   '- keywords는 그 시기 [특허 분석]의 keywords에 있는 말을 그대로 고른다. 원문에 없는 용어나 영어 약어를 새로 만들지 않는다.',
   ...RULES_COMMON,
   '형식: {"summary":"","periods":[{"label":"(자료의 시기 이름 그대로)","stage":"","title":"","points":[{"text":"","refs":[1]}],"keywords":[""]}]}',
@@ -328,6 +369,7 @@ const COMPETITOR_PROMPT = [
   '- keywords: 그 회사 [특허 분석]의 keywords에 있는 말 3개를 그대로 고른다.',
   '- direction: 무엇이 다른가. 그 회사 근거 특허 2건 이상에서 공통으로 보이는 개선 방향을 다른 회사와 비교해 한 문장으로 쓴다. 근거 특허는 표본이므로 "근거 특허에서는"으로 시작한다.',
   '- 특허 1건에서만 보이는 내용으로 그 회사 전체를 단정하지 않는다.',
+  '- purpose에 "(추정)"이 붙은 특허만으로는 목적을 쓰지 않는다("~를 위한 것으로 보인다" 금지). 재료·위치 관계는 원문 그대로 쓴다.',
   '- refs: 그 회사 특허 번호(no)만 2~4개. direction에 쓴 내용마다 그 내용이 나온 특허 번호를 빠짐없이 넣는다. refs에 없는 특허의 내용은 direction에 쓰지 않는다.',
   '- lead: 세 회사가 어떻게 같고 다른지 한 문장. 비중 큰 분야가 같으면 같다는 점을 먼저 쓰고, 근거 특허에서 보이는 차이를 덧붙인다.',
   ...RULES_COMMON,
@@ -546,7 +588,11 @@ export async function generateTechReport({ level1, level2, level3, from, to }, {
     const points = (Array.isArray(got.points) ? got.points : []).slice(0, 2).map((pt, j) => {
       const text = String(pt?.text ?? pt ?? '');
       const refs = toRefs(pt?.refs);
-      return { text, refs, caution: warn(`${p.label} 흐름 ${j + 1}`, checkStatement(text, { allowedNumbers, refs, allowedRefs: mine, refScope: '이 시기' })) };
+      const cited = patents.filter((x) => refs.includes(x.no));
+      return { text, refs, caution: warn(`${p.label} 흐름 ${j + 1}`, [
+        ...checkStatement(text, { allowedNumbers, refs, allowedRefs: mine, refScope: '이 시기' }),
+        ...sourceReasons(text, cited, sourceOf(cited)),
+      ]) };
     });
     const title = String(got.title ?? '');
     const stage = String(got.stage ?? '').slice(0, 14) || `${i + 1}단계`;
@@ -587,6 +633,7 @@ export async function generateTechReport({ level1, level2, level3, from, to }, {
         ...(refs.filter((r) => owned.has(r)).length < 2 ? ['근거 특허 1건 이하로 회사 전체를 설명함'] : []),
         ...(strangeFocus.length ? [`근거에 없는 집중 분야: ${strangeFocus.join(', ')}`] : []),
         ...(strangeKw.length ? [`근거 특허에 없는 키워드: ${strangeKw.join(', ')}`] : []),
+        ...sourceReasons(text, mine.filter((x) => refs.includes(x.no)), sourceOf(mine)),
       ]),
     };
   });
