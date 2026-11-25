@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkStatistics } from '../src/summaryStatCheck.js';
+import { checkStatistics, verifiedStatisticSubject } from '../src/summaryStatCheck.js';
 
 const field = '화소 배열·레이아웃';
 const other = '터치·센서';
@@ -15,6 +15,70 @@ for (const [company, group, first, last, share] of [
   values.push({ company, field: group, year: 2022, metric: 'change', value: Math.round((last - first) / first * 100) });
 }
 const stats = { from: 2020, to: 2022, fields: [field, other], values };
+
+test('괄호 연도와 분모의 연도를 보존하고 다른 해의 값으로 바꾼 대조 문장을 거부한다', () => {
+  const scoped = { from: 2023, to: 2024, fields: [field], totalField: '회로', values: [
+    { company: 'own', field, year: 2024, metric: 'share', value: 29 },
+    { company: 'own', field: '회로', year: 2023, metric: 'count', value: 299 },
+    { company: 'own', field: '회로', year: 2024, metric: 'count', value: 467 },
+  ] };
+  for (const value of [23, 29]) {
+    const line = `자사 ${field} 비중은 ${value}%(2023년)다.`;
+    assert.deepEqual(checkStatistics(line, scoped).statMismatches, []);
+    assert.equal(checkStatistics(line, scoped).statUnverified.length, 1);
+    assert.equal(verifiedStatisticSubject(line, scoped), null);
+  }
+  const actual = `2023년 자사 ${field} 비중은 전체 299건의 23%다.`;
+  assert.deepEqual(checkStatistics(actual, scoped).statMismatches, []);
+  assert.equal(checkStatistics(actual, scoped).statUnverified.length, 1);
+  const swapped = actual.replace('299건의 23%', '467건의 29%');
+  assert.match(checkStatistics(swapped, scoped).statMismatches[0], /회로 \/ 2023 \/ count/);
+  assert.equal(verifiedStatisticSubject(swapped, scoped), null);
+  const withYear = { ...scoped, values: [...scoped.values, { company: 'own', field, year: 2023, metric: 'share', value: 23 }] };
+  assert.deepEqual(checkStatistics(actual, withYear), { statMismatches: [], statUnverified: [] });
+  assert.deepEqual(checkStatistics(`자사 ${field} 비중 23%(2023년)`, withYear), { statMismatches: [], statUnverified: [] });
+  assert.equal(checkStatistics(`자사 ${field} 비중 29%(2023년)`, withYear).statMismatches.length, 1);
+});
+
+test('같은 문장의 증감률과 비중을 각각 대조하며 모순된 연도·지표는 추정하지 않는다', () => {
+  const scoped = { from: 2024, to: 2025, fields: [field], values: [
+    { company: 'competitor', field, year: 2024, metric: 'count', value: 236 },
+    { company: 'competitor', field, year: 2025, metric: 'count', value: 82 },
+    { company: 'competitor', field, year: 2025, metric: 'change', value: -65 },
+    { company: 'competitor', field, year: 2025, metric: 'share', value: 34 },
+  ] };
+  for (const line of [
+    `삼성 ${field} 2024년 236건 → 2025년 82건(증감률 -65%, 2025년 비중 34%)`,
+    `삼성 ${field} 2024년 대비 2025년 증감률 -65%(2025년 비중 34%)`,
+  ]) {
+    assert.deepEqual(checkStatistics(line, scoped), { statMismatches: [], statUnverified: [] }, line);
+    assert.match(checkStatistics(line.replace('-65%', '-64%'), scoped).statMismatches[0], /change/);
+    assert.match(checkStatistics(line.replace('34%', '35%'), scoped).statMismatches[0], /share/);
+  }
+  for (const line of [
+    `삼성 ${field} 2024년 비중 34%(2025년)`,
+    `삼성 ${field} 2025년 증감률 비중 34%`,
+    `삼성 ${field} 2025년 비중 34% 증감률`,
+  ]) {
+    const result = checkStatistics(line, scoped);
+    assert.deepEqual(result.statMismatches, []);
+    assert.equal(result.statUnverified.length, 1, line);
+  }
+});
+
+test('건수 화살표 뒤 비중에 마지막 명시 연도를 보존하고 모순된 분모 지표는 승인하지 않는다', () => {
+  const scoped = { from: 2023, to: 2024, fields: [field], totalField: '회로', values: [
+    { company: 'own', field, year: 2023, metric: 'count', value: 70 },
+    { company: 'own', field, year: 2024, metric: 'count', value: 135 },
+    { company: 'own', field, year: 2024, metric: 'share', value: 29 },
+  ] };
+  const line = `2023년 자사 ${field} 70건 → 2024년 135건, 비중 29%`;
+  assert.deepEqual(checkStatistics(line, scoped), { statMismatches: [], statUnverified: [] });
+  assert.match(checkStatistics(line.replace('29%', '23%'), scoped).statMismatches[0], /2024 \/ share/);
+  const conflict = checkStatistics(`자사 ${field} 2024년 증감률 전체 467건의 29%`, scoped);
+  assert.deepEqual(conflict.statMismatches, []);
+  assert.equal(conflict.statUnverified.length, 1);
+});
 
 test('회사·분야 앞에 쓴 비중 연도를 보존하고 다른 연도의 비중을 통과시키지 않는다', () => {
   const current = { from: 2023, to: 2024, fields: [field], totalField: '소자', values: [
@@ -42,6 +106,8 @@ test('다른 비교 기간이나 역방향 기간을 요청 기간의 증감률�
       assert.equal(result.statUnverified.length, 1);
     }
   }
+  const trailing = `자사 ${field} 증감률 93%(2024년 대비 2023년)`;
+  assert.equal(checkStatistics(trailing, current).statUnverified.length, 1);
   assert.deepEqual(checkStatistics(`2023년 대비 2024년 자사 ${field} 증감률은 93%다.`, current), { statMismatches: [], statUnverified: [] });
   assert.equal(checkStatistics(`2023년 대비 2024년 자사 ${field} 증감률은 75%다.`, current).statMismatches.length, 1);
 });

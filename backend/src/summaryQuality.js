@@ -1,51 +1,69 @@
 import { createHash } from 'node:crypto';
-import { statisticSubjects } from './summaryStatCheck.js';
+import { percentageReadings, statisticCompanyAt, statisticSubjects } from './summaryStatCheck.js';
+import { canonicalSummaryBody, composeSummaryParts, statisticPart, summaryBody } from './summarySources.js';
 
 const BUDGETS = [145, 430, 290];
-const bodyOf = (text) => text.trim().replace(/^[-*]\s+/, '').replace(/\[(?:확인 필요|숫자 다름|다른 언어)\]\s*/g, '');
-const canonical = (text) => bodyOf(text).replace(/\s+/g, ' ');
 
 /** 자동 관찰 기록이다. 사실 오류율이나 사람이 확인한 판정을 뜻하지 않는다. */
-export function summaryQuality({ prompts, parts, tasks, finalContent, stats, insightSources = [], chinaCountOnly = false }) {
-  const finalLines = finalContent.split('\n').filter((line) => /^\s*[-*]\s/.test(line)).map(canonical);
-  const segmenter = new Intl.Segmenter('ko', { granularity: 'sentence' });
+export function summaryQuality({ prompts, parts, tasks, finalContent, stats, insightSources = [], finalSources, chinaCountOnly = false }) {
+  const composed = composeSummaryParts(parts, tasks);
+  const finalByOrigin = new Map((finalSources ?? []).map((row) => [row.lineId, row]));
   const records = parts.map((part, index) => {
     const issues = [];
-    const add = (type, text, details = {}) => {
-      const body = canonical(text);
-      issues.push({ type, text, ...details,
-        finalPresence: !body ? 'not_applicable'
-          : (/^##/.test(text) ? finalContent.includes(text) : finalLines.some((line) => line === body || line.includes(body)))
-            ? 'retained' : 'changed_or_omitted',
-        usedForInsight: Boolean(body) && insightSources.some(({ sourceLine }) => canonical(sourceLine) === body || canonical(sourceLine).includes(body)),
+    const add = (type, text, origin = null, details = {}) => {
+      if (issues.some((issue) => issue.type === type && issue.source?.id === (origin?.id ?? origin?.lineId) && issue.text === text)) return;
+      const row = origin && finalByOrigin.get(origin.lineId);
+      const source = origin ? { id: origin.id ?? origin.lineId, request: origin.request, section: origin.section,
+        sectionNumber: origin.sectionNumber, line: origin.line, sentence: origin.sentence ?? 0 } : null;
+      issues.push({ type, text, source, ...details,
+        // 출처 없는 과거 재처리는 문자열로 역추정하지 않는다.
+        finalPresence: !origin ? 'not_applicable' : finalSources === undefined ? 'unknown'
+          : row ? canonicalSummaryBody(row.text).includes(canonicalSummaryBody(text)) ? 'retained' : 'transformed' : 'changed_or_omitted',
+        usedForInsight: origin?.id && finalSources === undefined ? null
+          : Boolean(origin?.id) && insightSources.some(({ origin: used }) => used?.sentenceIds.includes(origin.id)),
       });
     };
-    const headings = [...part.matchAll(/^##[ \t]+([^\r\n]+)$/gm)]
-      .map(([, heading]) => heading.trim().replace(/^핵심 흐름 \(3줄\)$/, '핵심 흐름'));
-    for (const heading of headings.filter((heading) => !tasks[index].includes(heading))) add('unexpectedHeading', `## ${heading}`);
+    const blocks = composed.requests[index];
+    const headings = blocks.map(({ section }) => section);
+    for (const block of blocks) {
+      if (!tasks[index].includes(block.section)) add('unexpectedHeading', block.lines[0].text, block.lines[0]);
+      else if (composed.origins.get(block.section)?.[0].lineId !== block.lines[0].lineId) add('duplicateHeading', block.lines[0].text, block.lines[0]);
+    }
     for (const heading of tasks[index].filter((heading) => !headings.includes(heading))) add('missingHeading', `## ${heading}`);
     if (BUDGETS[index] && part.length > BUDGETS[index]) {
-      add('partBudgetExceeded', '', { actual: part.length, limit: BUDGETS[index] });
+      add('partBudgetExceeded', '', null, { actual: part.length, limit: BUDGETS[index] });
     }
     if (index < 3) {
-      for (const line of part.split('\n').filter((line) => /^\s*[-*]\s/.test(line))) {
-        for (const { segment } of segmenter.segment(bodyOf(line))) {
-          const text = segment.trim();
-          const { companies, fields } = statisticSubjects(text, stats);
-          if (companies.length > 1 || fields.length > 1) add('mixedSubjects', text, { companies, fields });
-          if (/\d+(?:\.\d+)?\s*%/.test(text) && /증감|증가|감소|상승|하락/.test(text) && !/비중|점유율/.test(text)) {
-            const years = new Set([...text.matchAll(/(\d{4})(?=\s*(?:년|[~–-]))/g)].map(([, year]) => Number(year)));
-            if (!(years.has(stats.from) && years.has(stats.to))) add('missingChangePeriod', text);
+      for (const line of blocks.flatMap(({ lines }) => lines).filter(({ text }) => /^\s*[-*]\s/.test(text))) {
+        const statisticalLine = statisticPart(summaryBody(line.text));
+        for (const sentence of line.sentences) {
+          const text = sentence.text;
+          const statistical = statisticalLine.slice(sentence.start, sentence.end).trim();
+          if (!statistical) continue;
+          const { companies, fields } = statisticSubjects(statistical, stats);
+          if (companies.length > 1 || fields.length > 1) add('mixedSubjects', text, sentence, { companies, fields });
+          const interpretation = /^해석\s*:/.test(statisticPart(line.text).replace(/^[-*]\s*/, ''));
+          for (const reading of percentageReadings(statistical, stats)) {
+            if (reading.metric === 'change') {
+              // 건수의 연도 표기와 증감률 자체의 비교 기간 표기 준수는 구분한다.
+              const period = reading.period;
+              if (!period) add('missingChangePeriod', text, sentence);
+              else if (reading.periodConflict || period[0] !== stats.from || period[1] !== stats.to) add('invalidChangePeriod', text, sentence, { period });
+            }
+            if (reading.metric === 'share' && !interpretation) add('countOnlyShare', text, sentence);
+            if (chinaCountOnly && statisticCompanyAt(statistical, reading.start, stats) === 'china') add('chinaNonCountMetric', text, sentence);
           }
-          if (chinaCountOnly && companies.includes('china') && /\d+(?:\.\d+)?\s*%/.test(text)) add('chinaNonCountMetric', text);
+          if (chinaCountOnly) for (const rank of statistical.matchAll(/\d+\s*위/g)) {
+            if (statisticCompanyAt(statistical, rank.index, stats) === 'china') add('chinaNonCountMetric', text, sentence);
+          }
         }
       }
     }
     return { part: index + 1, length: part.length, issues };
   });
   return {
-    schemaVersion: 1,
-    checkerVersion: 'year-period-aggregate-v1',
+    schemaVersion: 2,
+    checkerVersion: 'per-number-source-v2',
     promptVersion: createHash('sha256').update(JSON.stringify(prompts)).digest('hex'),
     // 요약 수와 내부 요청 수를 각각 분모로 쓸 수 있도록 분리한다.
     requestCount: parts.length,
@@ -69,7 +87,7 @@ export function summarizeQuality(rows) {
     if (!groups.has(key)) groups.set(key, {
       model: row.model, criteriaVersion: row.criteria_version, promptVersion: audit.promptVersion, checkerVersion: audit.checkerVersion,
       summaries: 0, summariesWithIssues: 0, requests: 0, requestsWithIssues: 0,
-      summariesWithRetainedIssues: 0, retainedIssues: 0, changedOrOmittedIssues: 0,
+      summariesWithRetainedIssues: 0, retainedIssues: 0, changedOrOmittedIssues: 0, transformedIssues: 0, unknownPresenceIssues: 0,
       mismatchSummaries: 0, unverifiedSummaries: 0, issueCounts: {},
     });
     const group = groups.get(key);
@@ -83,6 +101,8 @@ export function summarizeQuality(rows) {
       group.issueCounts[type] = (group.issueCounts[type] ?? 0) + 1;
       group.retainedIssues += Number(finalPresence === 'retained');
       group.changedOrOmittedIssues += Number(finalPresence === 'changed_or_omitted');
+      group.transformedIssues += Number(finalPresence === 'transformed');
+      group.unknownPresenceIssues += Number(finalPresence === 'unknown');
     }
     group.mismatchSummaries += Number(Boolean(checks.statMismatches?.length));
     group.unverifiedSummaries += Number(Boolean(checks.statUnverified?.length));

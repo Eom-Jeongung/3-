@@ -46,6 +46,51 @@ export function statisticSubjects(line, stats) {
   };
 }
 
+// 수치에 붙은 지표와 연도는 한 경로로 읽는다. 뒤의 다른 지표가 앞의 %를 덮어쓰지 않는다.
+function percentageReading(text, start, end, stats, { earlierYear = null, context = '', lineIsChange = false } = {}) {
+  const before = text.slice(0, start).split(/[,。]|\.\s/).at(-1);
+  const after = text.slice(end).split(/[,。]|\.\s/)[0];
+  const labels = [...before.matchAll(/비중|점유율|증감률|증가율|감소율|변화율/g)];
+  const leading = labels.at(-1)?.[0];
+  const trailing = after.match(/^\s*(?:\(\s*)?(비중|점유율|증감률|증가율|감소율|변화율)/)?.[1];
+  const kind = (label) => /비중|점유율/.test(label) ? 'share' : 'change';
+  const previousLabel = labels.at(-2);
+  const competingLabels = previousLabel && kind(previousLabel[0]) !== kind(leading)
+    && !/\d|%/.test(before.slice(previousLabel.index + previousLabel[0].length, labels.at(-1).index));
+  const conflictingMetric = competingLabels || (leading && trailing && kind(leading) !== kind(trailing));
+  let metric = leading ? kind(leading) : trailing ? kind(trailing) : null;
+  if (!metric && (/전체(?:\s*출원)?(?:\s*\d+\s*건)?의\s*$/.test(before) || /^\s*(?:을|를)?\s*차지/.test(after))) metric = 'share';
+  if (!metric && (/^[+-]/.test(text.slice(start, end)) || /증가|상승|늘|감소|하락|줄/.test(`${before.slice(-18)} ${after.slice(0, 12)}`) || lineIsChange)) metric = 'change';
+  const yearContext = text.slice(0, start).split(/。|\.\s/).at(-1);
+  const previousYear = [...yearContext.matchAll(/(\d{4})\s*년/g)].at(-1)?.[1];
+  const followingYear = after.match(/^\s*\(\s*(\d{4})\s*년\s*\)/)?.[1];
+  const attachedYear = followingYear ? Number(followingYear) : null;
+  const inheritedYear = previousYear ? Number(previousYear) : earlierYear;
+  const yearConflict = attachedYear !== null && inheritedYear != null && attachedYear !== inheritedYear;
+  const beforePeriod = [...(context + before).matchAll(/(\d{4})\s*년?\s*(?:대비|부터|[~–-])\s*(\d{4})\s*년/g)].at(-1);
+  const afterPeriod = after.match(/^\s*\(\s*(\d{4})\s*년?\s*(?:대비|부터|[~–-])\s*(\d{4})\s*년\s*\)/);
+  const period = afterPeriod ?? beforePeriod;
+  return { metric: conflictingMetric ? null : metric,
+    year: yearConflict ? null : attachedYear ?? inheritedYear ?? stats.to,
+    yearConflict,
+    period: period ? [Number(period[1]), Number(period[2])] : null,
+    periodConflict: Boolean(beforePeriod && afterPeriod && (beforePeriod[1] !== afterPeriod[1] || beforePeriod[2] !== afterPeriod[2])),
+    decrease: /감소율/.test(leading ?? trailing ?? '') || /감소|하락|줄/.test(after.slice(0, 12)),
+  };
+}
+
+// 운영 기록은 수치 해석을 재구현하지 않고 같은 지표·기간 판독을 사용한다.
+export function percentageReadings(text, stats) {
+  return [...text.matchAll(/[+-]?\d+(?:\.\d+)?\s*%/g)].map((match) => ({
+    ...percentageReading(text, match.index, match.index + match[0].length, stats),
+    start: match.index, value: Number(match[0].replace(/\s*%$/, '')),
+  }));
+}
+
+export function statisticCompanyAt(text, position, stats) {
+  return mentionsIn(text, stats).filter((mark) => mark.type === 'company' && mark.end <= position).at(-1)?.value ?? null;
+}
+
 // 한 조각에서 숫자 주장 꺼내기: [{ metric, year, value }], 해석할 수 없는 숫자는 problems에
 function claimsIn(piece, stats, changeAllowed, problems, earlierYear, lineIsChange, context = '') {
   const claims = [];
@@ -59,36 +104,33 @@ function claimsIn(piece, stats, changeAllowed, problems, earlierYear, lineIsChan
     const newSubject = hasNewSubject(str.slice(0, offset));
     claims.push({ metric: 'count', year: y1 ? Number(y1) : stats.from, value: Number(n1), laterSentence, newSubject });
     claims.push({ metric: 'count', year: y2 ? Number(y2) : stats.to, value: Number(n2), laterSentence, newSubject });
-    return ' ';
+    // 건수는 대조했지만, 뒤의 비중이 참조할 수 있도록 명시 연도는 남긴다.
+    return [y1 && `${y1}년`, y2 && `${y2}년`].filter(Boolean).join(' ') + ' ';
   });
   // "전체 147건의 88%"는 분야의 비중과 회사 전체의 건수 두 주장이다.
   text = text.replace(/(?:회사\s*)?전체(?:\s*출원)?\s+(\d+)\s*건의\s*(\d+(?:\.\d+)?)\s*%/g,
-    (_, total, share, offset, str) => {
-      const clause = str.slice(0, offset).split(/[,。]|\.\s/).at(-1);
-      const year = Number([...clause.matchAll(/(\d{4})\s*년/g)].at(-1)?.[1] ?? stats.to);
+    (whole, total, share, offset, str) => {
+      const shareStart = offset + whole.lastIndexOf(share);
+      const reading = percentageReading(str, shareStart, offset + whole.length, stats, { earlierYear, context });
+      if (reading.metric !== 'share') { problems.push('분모 비중과 지표 표기가 충돌함'); return ' '.repeat(whole.length); }
+      const year = reading.year;
+      if (year === null) { problems.push('비중과 분모 건수의 연도가 충돌함'); return ' '.repeat(whole.length); }
       claims.push({ metric: 'count', year, value: Number(total), totalField: true });
       claims.push({ metric: 'share', year, value: Number(share) });
-      return ' ';
+      return ' '.repeat(whole.length);
     });
   text = text.replace(/([+-]?\d+(?:\.\d+)?)\s*%/g, (whole, num, offset, str) => {
-    const before = str.slice(0, offset).split(/[,。]|\.\s/).at(-1);
-    const after = str.slice(offset + whole.length).split(/[,。]|\.\s/)[0];
-    const nearby = `${before.slice(-18)} ${after.slice(0, 12)}`;
-    const isShare = /비중|점유율|회사 전체 대비|전체(?:\s*출원)?의\s*$/.test(before.slice(-18))
-      || /^\s*(?:을|를)?\s*차지/.test(after) && !/증감률|증가율|감소율/.test(before.slice(-18))
-      || /비중|점유율/.test(after.slice(0, 12));
-    // "증가율(20%)이 자사(66%)보다"처럼 바로 옆에 말이 없어도, 줄이 증감률 이야기면 증감률로 본다
-    const isChange = !isShare && (/^[+-]/.test(num) || /증가|상승|늘|감소|하락|줄|증감|변화율/.test(nearby) || lineIsChange);
-    if (isShare === isChange) { problems.push('비중인지 증감률인지 알 수 없는 %'); return ' '; }
-    const periodText = context + before;
-    const explicitPeriod = [...periodText.matchAll(/(\d{4})\s*년?\s*(?:대비|부터|[~–-])\s*(\d{4})\s*년/g)].at(-1);
-    if (isChange && (!changeAllowed || (explicitPeriod && (Number(explicitPeriod[1]) !== stats.from || Number(explicitPeriod[2]) !== stats.to)))) {
+    const reading = percentageReading(str, offset, offset + whole.length, stats, { earlierYear, context, lineIsChange });
+    const isShare = reading.metric === 'share';
+    const isChange = reading.metric === 'change';
+    if (!reading.metric) { problems.push('비중인지 증감률인지 알 수 없는 %'); return ' '; }
+    if (isShare && reading.year === null) { problems.push('비중의 연도가 충돌함'); return ' '; }
+    if (isChange && (!changeAllowed || reading.periodConflict || (reading.period && (reading.period[0] !== stats.from || reading.period[1] !== stats.to)))) {
       problems.push('증감률의 비교 기간에 대응하는 통계가 없음'); return ' ';
     }
     let value = Number(num);
-    if (isChange && /감소|하락|줄/.test(nearby) && !/^[+-]/.test(num)) value = -value;
-    const shareYear = [...before.matchAll(/(\d{4})\s*년/g)].at(-1);
-    claims.push({ metric: isShare ? 'share' : 'change', year: isShare ? (shareYear ? Number(shareYear[1]) : earlierYear ?? stats.to) : stats.to, value });
+    if (isChange && reading.decrease && !/^[+-]/.test(num)) value = -value;
+    claims.push({ metric: reading.metric, year: isShare ? reading.year : stats.to, value });
     return ' ';
   });
   text = text.replace(/(\d{4})(?:\s*년)?\s*(?:[~–-]|부터)\s*(\d{4})\s*년(?:까지)?\s*(?:모든 해|모두|연간|매년|각)\s*(\d+)\s*건/g,

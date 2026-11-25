@@ -3,17 +3,20 @@ import { verifiedStatisticSubject } from './summaryStatCheck.js';
 const COMPANY_NAMES = { own: 'LG디스플레이', competitor: '삼성디스플레이', china: '중국 경쟁사' };
 const SOURCE_SECTIONS = ['핵심 메시지', '핵심 흐름', '성장 분야', '경쟁사 동향'];
 
-export function buildSummaryInsights(sections, stats) {
+export function buildSummaryInsights(sections, stats, sourceRows = new Map()) {
   const candidates = new Map();
   for (const title of SOURCE_SECTIONS) {
-    for (const line of (sections.get(title) ?? '').split('\n')) {
+    for (const [index, line] of (sections.get(title) ?? '').split('\n').entries()) {
       if (!/^\s*[-*]\s+/.test(line)) continue;
       const subject = verifiedStatisticSubject(line, stats);
       if (!subject?.hasActivity) continue;
       const key = subject.company ? `company:${subject.company}` : `field:${subject.field}`;
       const previous = candidates.get(key);
       // 회사는 한 번만 쓰고, 뒤에서 확인한 회사·분야 쌍이 회사 단독보다 구체적이면 교체한다.
-      if (!previous || (!previous.field && subject.field)) candidates.set(key, { ...subject, sourceLine: line });
+      const source = sourceRows.get(title)?.[index];
+      const origin = source ? { lineId: source.lineId, request: source.request, section: source.section, line: source.line,
+        sentenceIds: source.sentences.map(({ id }) => id) } : null;
+      if (!previous || (!previous.field && subject.field)) candidates.set(key, { ...subject, sourceLine: line, origin });
     }
   }
   const pairedFields = new Set([...candidates.values()].filter(({ company }) => company).map(({ field }) => field));
@@ -34,5 +37,5 @@ export function buildSummaryInsights(sections, stats) {
   });
   if (!lines.length) lines.push('- 확인해 볼 점: 추가로 살펴볼 주제를 고를 자료가 부족하다.');
   return { text: ['## 시사점', ...lines].join('\n'), counts,
-    sources: selected.map(({ company, field, sourceLine }) => ({ company, field, sourceLine })) };
+    sources: selected.map(({ company, field, sourceLine, origin }) => ({ company, field, sourceLine, origin })) };
 }

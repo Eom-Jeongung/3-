@@ -10,7 +10,7 @@ try {
     SELECT model, criteria_version, checks FROM trend_summaries
     WHERE created_at >= datetime('now', ?) ORDER BY id
   `).all(`-${days} days`);
-  console.log('자동 관찰 집계입니다. 수치 경고는 사실 오류 확정이 아니며, changed_or_omitted는 원문이 그대로 남지 않았다는 뜻입니다.');
+  console.log('자동 관찰 집계입니다. 수치 경고는 사실 오류 확정이 아닙니다. transformed는 출처가 남고 표현이 바뀐 경우, unknown은 출처 정보 부족입니다.');
   console.log(JSON.stringify({ days, ...summarizeQuality(rows) }, null, 2));
 } finally {
   database.close();

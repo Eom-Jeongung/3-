@@ -13,6 +13,7 @@ import { groundInterpretations } from './summaryEvidence.js';
 import { buildSummaryInsights } from './summaryInsights.js';
 import { patentExcerptSentences, renderPatentExcerpts } from './summaryPatentExcerpts.js';
 import { summaryQuality } from './summaryQuality.js';
+import { composeSummaryParts, readSummarySections, retainedSummarySources } from './summarySources.js';
 
 const COMPANY = { own: '자사(LG디스플레이)', competitor: '경쟁사(삼성디스플레이)', china: '중국 경쟁사(BOE·CSOT·Tianma·Visionox)' };
 const EVIDENCE_LIMIT = 10;
@@ -231,23 +232,9 @@ export function splitSummaryPrompt() {
   return PROMPT_FILES.map((name) => readFileSync(new URL('../prompts/' + name, import.meta.url), 'utf8').trimEnd());
 }
 
-function readSummarySections(text) {
-  const sections = new Map();
-  for (const chunk of text.split(/(?=^[ \t]*#{1,6}(?:[ \t]|$))/m)) {
-    const heading = chunk.split('\n', 1)[0].trim().match(/^##[ \t]+(.+?)\s*$/)?.[1];
-    if (!heading) continue;
-    const title = heading === '핵심 흐름 (3줄)' ? '핵심 흐름' : heading;
-    if (!sections.has(title)) sections.set(title, chunk.trim());
-  }
-  return sections;
-}
-
 // 각 응답에서 허용한 제목과 그 본문만 가져온다.
 export function combineSummaryParts(answers) {
-  return SUMMARY_TASKS.flatMap((names, i) => {
-    const sections = readSummarySections(answers[i] ?? '');
-    return names.map((name) => sections.get(name)).filter(Boolean);
-  }).join('\n');
+  return composeSummaryParts(answers, SUMMARY_TASKS).content;
 }
 
 function renderGrowthSection(section, growth, evidence, from, to) {
@@ -261,7 +248,8 @@ function renderGrowthSection(section, growth, evidence, from, to) {
   const interpretation = section.split('\n').find((line) => /^- (?:\*\*)?해석:\s/.test(line));
   const patent = interpretation && evidence.find(({ number }) => interpretation.includes(number));
   const supported = patent && growth[patent.companyKey]?.some(({ field, canInterpret }) => field === patent.field && canInterpret);
-  return ['## 성장 분야', ...lines, supported ? interpretation : '- 해석: 판단 근거 부족'].join('\n');
+  return { content: ['## 성장 분야', ...lines, supported ? interpretation : '- 해석: 판단 근거 부족'].join('\n'),
+    retainsInterpretation: Boolean(supported && interpretation) };
 }
 
 const scopeKey = ({ level1 = '', level2 = '', level3 = '' }) => ({ level1: level1 ?? '', level2: level2 ?? '', level3: level3 ?? '' });
@@ -292,20 +280,34 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
     문장: item.excerptSentences.map((text, index) => ({ 번호: index + 1, 원문: text })),
   }));
   const selection = await runPart(prompts[3], 3, `[원문 발췌 후보]\n${JSON.stringify(excerptInput)}`);
-  const modelSections = readSummarySections(combineSummaryParts(parts));
+  const composed = composeSummaryParts(parts, SUMMARY_TASKS);
+  const modelSections = composed.sections;
   // 이 섹션의 사실은 집계에서만 생성한다. 과거 형식의 모델 답변을 재처리할 때도 적용된다.
   if (modelSections.has('성장 분야')) {
     const text = modelSections.get('성장 분야');
     const interpretation = text.split('\n').find((line) => /^- (?:\*\*)?해석:\s/.test(line));
     modelSections.set('성장 분야', ['## 성장 분야', interpretation].filter(Boolean).join('\n'));
+    const origins = composed.origins.get('성장 분야');
+    composed.origins.set('성장 분야', [origins[0], ...(interpretation ? [origins[text.split('\n').indexOf(interpretation)]] : [])]);
   }
   const answer = [...modelSections.values()].join('\n');
   const grounded = groundInterpretations(answer, evidence, validationStats);
+  const groundedSources = retainedSummarySources(grounded.content,
+    [...modelSections.keys()].flatMap((name) => composed.origins.get(name)));
   const sections = readSummarySections(grounded.content);
+  const sourceRows = new Map([...sections.keys()].map((name) => [name, groundedSources.filter(({ section }) => section === name)]));
   if (sections.has('성장 분야')) {
-    sections.set('성장 분야', renderGrowthSection(sections.get('성장 분야'), growth, evidence, from, to));
+    const previous = sections.get('성장 분야');
+    const rendered = renderGrowthSection(previous, growth, evidence, from, to);
+    const oldRows = sourceRows.get('성장 분야');
+    const interpretationIndex = previous.split('\n').findIndex((line) => /^- (?:\*\*)?해석:\s/.test(line));
+    sections.set('성장 분야', rendered.content);
+    // 코드가 만든 건수는 모델 문장의 출처를 갖지 않는다. 남긴 해석만 원래 출처를 이어받는다.
+    const renderedLines = rendered.content.split('\n');
+    sourceRows.set('성장 분야', renderedLines.map((_text, index) => index === 0 ? oldRows[0]
+      : index === renderedLines.length - 1 && rendered.retainsInterpretation ? oldRows[interpretationIndex] ?? null : null));
   }
-  const insights = buildSummaryInsights(sections, validationStats);
+  const insights = buildSummaryInsights(sections, validationStats, sourceRows);
   sections.set('시사점', insights.text);
   const limitations = [
     '- 규칙 기반 자동 분류의 무작위 검증 정확도는 약 85%입니다.',
@@ -336,6 +338,7 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
   checks.dataWarnings = dataWarnings;
   checks.quality = summaryQuality({ prompts, parts: [...parts, selection], tasks: SUMMARY_TASKS,
     finalContent: content, stats: validationStats, insightSources: insights.sources,
+    finalSources: [...sourceRows.values()].flat().filter(Boolean),
     chinaCountOnly: facts.includes('참고: 중국 경쟁사는') });
   const row = {
     ...scope,

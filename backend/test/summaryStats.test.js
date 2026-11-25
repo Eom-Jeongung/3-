@@ -330,6 +330,7 @@ test('요약에 자체 집계한 성장 분야와 특허 원문 발췌를 저장
     const result = await generateTrendSummary(scope);
     assert.equal(sent.length, 4);
     assert.equal(result.checks.quality.requestCount, 4);
+    assert.equal(result.checks.quality.insightSources.find(({ company }) => company === 'competitor').origin.request, 2);
     assert.ok(result.checks.quality.parts[3].issues.some(({ type, text, finalPresence }) =>
       type === 'unexpectedHeading' && text === '## 시사점 및 제언' && finalPresence === 'changed_or_omitted'));
     assert.ok(sent.slice(0, 3).every((request) => request.messages[1].content.includes('[구조화 통계:')));
@@ -358,6 +359,43 @@ test('요약에 자체 집계한 성장 분야와 특허 원문 발췌를 저장
   } finally {
     db.exec('ROLLBACK TO generation_test');
     db.exec('RELEASE generation_test');
+    globalThis.fetch = originalFetch;
+    if (oldBase === undefined) delete process.env.AI_BASE_URL; else process.env.AI_BASE_URL = oldBase;
+    if (oldModel === undefined) delete process.env.AI_MODEL; else process.env.AI_MODEL = oldModel;
+  }
+});
+
+test('실제 생성 경로도 다른 요청의 중복 문장을 최종 출처나 시사점 출처로 승인하지 않는다', async () => {
+  const originalFetch = globalThis.fetch;
+  const oldBase = process.env.AI_BASE_URL;
+  const oldModel = process.env.AI_MODEL;
+  db.exec('SAVEPOINT duplicate_origin_test');
+  try {
+    const rate = buildSummaryInput(scope).validationStats.values.find((row) => row.company === 'competitor'
+      && row.field === fields[0] && row.metric === 'change').value;
+    const sentence = `- 삼성 ${fields[0]} 증감률 ${rate}%`;
+    const outputs = [
+      `## 핵심 메시지\n${sentence}`,
+      '## 핵심 흐름\n- 판단 근거 부족\n- 판단 근거 부족\n- 판단 근거 부족\n## 성장 분야\n- 해석: 판단 근거 부족',
+      `## 경쟁사 동향\n- 해석: 판단 근거 부족\n## 핵심 메시지\n${sentence}`,
+      '## 주목 특허\n- 선정할 원문 문장 없음',
+    ];
+    let calls = 0;
+    process.env.AI_BASE_URL = 'https://example.invalid';
+    process.env.AI_MODEL = 'test';
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: outputs[calls++] } }] }) });
+    const result = await generateTrendSummary(scope);
+    assert.equal(calls, 4);
+    const first = result.checks.quality.parts[0].issues.find(({ type }) => type === 'missingChangePeriod');
+    const excluded = result.checks.quality.parts[2].issues.find(({ type }) => type === 'missingChangePeriod');
+    assert.equal(first.finalPresence, 'retained');
+    assert.equal(first.usedForInsight, true);
+    assert.equal(excluded.finalPresence, 'changed_or_omitted');
+    assert.equal(excluded.usedForInsight, false);
+    assert.equal(result.checks.quality.insightSources.find(({ company }) => company === 'competitor').origin.request, 1);
+  } finally {
+    db.exec('ROLLBACK TO duplicate_origin_test');
+    db.exec('RELEASE duplicate_origin_test');
     globalThis.fetch = originalFetch;
     if (oldBase === undefined) delete process.env.AI_BASE_URL; else process.env.AI_BASE_URL = oldBase;
     if (oldModel === undefined) delete process.env.AI_MODEL; else process.env.AI_MODEL = oldModel;

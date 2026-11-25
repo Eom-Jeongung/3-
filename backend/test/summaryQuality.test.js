@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { summaryQuality, summarizeQuality } from '../src/summaryQuality.js';
+import { composeSummaryParts } from '../src/summarySources.js';
+import { buildSummaryInsights } from '../src/summaryInsights.js';
 
 const stats = { from: 2022, to: 2024, fields: ['구동 회로', '전원 회로'] };
 const tasks = [['핵심 메시지'], ['핵심 흐름', '성장 분야'], ['경쟁사 동향'], ['주목 특허']];
@@ -18,8 +20,11 @@ test('원응답의 위반과 최종본 잔존을 구분하고 시사점 근거�
   const parts = [...base.parts];
   parts[0] = `## 핵심 메시지\n- ${mixed}`;
   parts[2] = `## 경쟁사 동향\n- ${noPeriod}`;
+  const source = composeSummaryParts(parts, tasks).origins.get('핵심 메시지')[1];
   const result = summaryQuality({ ...base, parts, finalContent: `## 핵심 메시지\n- [확인 필요] ${mixed}`,
-    insightSources: [{ company: 'competitor', field: '구동 회로', sourceLine: `- ${mixed}` }] });
+    finalSources: [{ ...source, text: `- [확인 필요] ${mixed}` }],
+    insightSources: [{ company: 'competitor', field: '구동 회로', sourceLine: `- ${mixed}`,
+      origin: { lineId: source.lineId, sentenceIds: source.sentences.map(({ id }) => id) } }] });
   const mixedIssue = result.parts[0].issues.find(({ type }) => type === 'mixedSubjects');
   assert.equal(mixedIssue.finalPresence, 'retained');
   assert.equal(mixedIssue.usedForInsight, true);
@@ -34,7 +39,8 @@ test('전체 집계 문장을 혼합 주체로 세지 않고 비중을 증감률
   parts[0] = '## 핵심 메시지\n- 삼성 전체 2024년 비중 48%';
   parts[2] = '## 경쟁사 동향\n- 구동 회로 2022년 대비 2024년 증감률 75%';
   const result = summaryQuality({ ...base, parts, finalContent: parts.join('\n') });
-  assert.equal(result.hasIssues, false);
+  assert.ok(result.parts[0].issues.some(({ type }) => type === 'countOnlyShare'));
+  assert.ok(!result.parts.flatMap(({ issues }) => issues).some(({ type }) => type === 'mixedSubjects' || type === 'missingChangePeriod'));
   const changed = summaryQuality({ ...base, prompts: ['changed', ...base.prompts.slice(1)], finalContent: '' });
   assert.notEqual(changed.promptVersion, result.promptVersion);
 });
@@ -64,4 +70,78 @@ test('관찰 이전 기록을 위반 0으로 세지 않고 요약·요청 분모
   assert.equal(result.groups[0].requestsWithIssues, 1);
   assert.equal(result.groups[0].unverifiedSummaries, 1);
   assert.equal(result.groups[0].retainedIssues, 1);
+});
+
+test('역순 기간과 비중이 함께 있는 문장의 기간 생략·건수 전용 줄 위반을 기록한다', () => {
+  const parts = [...base.parts];
+  parts[0] = '## 핵심 메시지\n- 삼성 구동 회로 2024년 대비 2022년 증감률 93%';
+  parts[2] = '## 경쟁사 동향\n- 삼성 구동 회로 증감률 93%, 2024년 비중 34%';
+  const result = summaryQuality({ ...base, parts, finalContent: '', finalSources: [] });
+  assert.ok(result.parts[0].issues.some(({ type }) => type === 'invalidChangePeriod'));
+  assert.ok(result.parts[2].issues.some(({ type }) => type === 'missingChangePeriod'));
+  assert.ok(result.parts[2].issues.some(({ type }) => type === 'countOnlyShare'));
+});
+
+test('특허 인용의 분야명은 통계 주체에 섞지 않고 중국 뒤의 순위를 별도로 기록한다', () => {
+  const parts = [...base.parts];
+  parts[2] = '## 경쟁사 동향\n- 해석: 삼성 구동 회로 2022년 30건 → 2024년 50건 | 1020240000001 | 「전원 회로 및 회로를 포함한다」\n- 삼성 구동 회로 2024년 비중 34%이며 중국 구동 회로 2024년 0건이다.\n- 중국 구동 회로 2024년 1위';
+  const result = summaryQuality({ ...base, parts, finalContent: '', finalSources: [], chinaCountOnly: true });
+  const issues = result.parts[2].issues;
+  assert.ok(!issues.some(({ type, text }) => type === 'mixedSubjects' && text.startsWith('해석:')));
+  assert.ok(!issues.some(({ type, text }) => type === 'chinaNonCountMetric' && text.startsWith('삼성')));
+  assert.ok(issues.some(({ type, text }) => type === 'chinaNonCountMetric' && text.includes('1위')));
+});
+
+test('같은 문장이 다른 요청의 무단 섹션에 있어도 채택된 출처만 잔존·시사점 사용으로 기록한다', () => {
+  const parts = [...base.parts];
+  const text = '- 삼성 구동 회로 증감률 33%';
+  parts[0] = `## 핵심 메시지\n${text}`;
+  parts[2] = `## 경쟁사 동향\n- 해석: 판단 근거 부족\n## 핵심 메시지\n${text}`;
+  const actualStats = { ...stats, values: [{ company: 'competitor', field: '구동 회로', year: 2024, metric: 'change', value: 33 }] };
+  const composed = composeSummaryParts(parts, tasks);
+  const insights = buildSummaryInsights(composed.sections, actualStats, composed.origins);
+  assert.equal(insights.sources[0].origin.request, 1);
+  const finalSources = [...composed.origins.values()].flat();
+  const result = summaryQuality({ ...base, parts, stats: actualStats, finalContent: composed.content, finalSources, insightSources: insights.sources });
+  const first = result.parts[0].issues.find(({ type }) => type === 'missingChangePeriod');
+  const excluded = result.parts[2].issues.find(({ type }) => type === 'missingChangePeriod');
+  assert.equal(first.finalPresence, 'retained');
+  assert.equal(first.usedForInsight, true);
+  assert.equal(excluded.finalPresence, 'changed_or_omitted');
+  assert.equal(excluded.usedForInsight, false);
+  assert.notEqual(first.source.id, excluded.source.id);
+  assert.equal(result.parts[2].issues.find(({ type }) => type === 'unexpectedHeading').finalPresence, 'changed_or_omitted');
+});
+
+test('같은 요청의 중복 섹션도 구분하고 출처 없는 재처리에서는 잔존을 추정하지 않는다', () => {
+  const parts = [...base.parts];
+  const text = '- 삼성 구동 회로 증감률 33%';
+  parts[0] = `## 핵심 메시지\n${text}\n## 핵심 메시지\n${text}`;
+  const composed = composeSummaryParts(parts, tasks);
+  const result = summaryQuality({ ...base, parts, finalContent: composed.content, finalSources: [...composed.origins.values()].flat() });
+  const missing = result.parts[0].issues.filter(({ type }) => type === 'missingChangePeriod');
+  assert.deepEqual(missing.map(({ finalPresence }) => finalPresence), ['retained', 'changed_or_omitted']);
+  assert.ok(result.parts[0].issues.some(({ type }) => type === 'duplicateHeading'));
+  const legacy = summaryQuality({ ...base, parts, finalContent: composed.content });
+  assert.equal(legacy.parts[0].issues.find(({ type }) => type === 'missingChangePeriod').finalPresence, 'unknown');
+});
+
+test('건수 연도가 앞에 있어도 증감률 자체의 기간 생략은 기록하고 뒤 괄호 기간은 인정한다', () => {
+  const parts = [...base.parts];
+  parts[0] = '## 핵심 메시지\n- 삼성 구동 회로 2022년 30건 → 2024년 50건, 증감률 67%';
+  parts[2] = '## 경쟁사 동향\n- 삼성 구동 회로 증감률 67%(2022년 대비 2024년)';
+  const result = summaryQuality({ ...base, parts, finalContent: '', finalSources: [] });
+  assert.ok(result.parts[0].issues.some(({ type }) => type === 'missingChangePeriod'));
+  assert.ok(!result.parts[2].issues.some(({ type }) => /ChangePeriod/.test(type)));
+});
+
+test('출처를 유지한 후처리와 탈락을 구분하고 여러 문장의 인용을 통계로 읽지 않는다', () => {
+  const parts = [...base.parts];
+  parts[0] = '## 핵심 메시지\n- 삼성 구동 회로 증감률 93%';
+  parts[2] = '## 경쟁사 동향\n- 해석: 삼성 구동 회로 2022년 30건 → 2024년 50건 | 1020240000001 | 「전원 회로다. 구동 회로와 연결된다.」';
+  const source = composeSummaryParts(parts, tasks).origins.get('핵심 메시지')[1];
+  const result = summaryQuality({ ...base, parts, finalContent: '- 삼성 구동 회로 건수만 표시',
+    finalSources: [{ ...source, text: '- 삼성 구동 회로 건수만 표시' }] });
+  assert.equal(result.parts[0].issues[0].finalPresence, 'transformed');
+  assert.ok(!result.parts[2].issues.some(({ type }) => type === 'mixedSubjects'));
 });
