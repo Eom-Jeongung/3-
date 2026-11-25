@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { formatAppNo } from '../format.js'
 
 // AI 기술 분석 보고서 본문 (backend/src/techReport.js가 만든 JSON을 그린다)
@@ -8,9 +8,19 @@ import { formatAppNo } from '../format.js'
 
 const COMPANY_SHORT = { own: '자사', competitor: '삼성', china: '중국 4사' }
 
+// 근거 특허 표는 처음에 이만큼만 보이고 나머지는 '더보기'로 연다 (2026-11-26: 표가 너무 길다는 의견)
+const PATENTS_SHOWN = 3
+const SHOW_ALL_EVENT = 'tech-patents-show-all'
+
 const goToPatent = (no) => {
   const row = document.getElementById(`tech-patent-${no}`)
   if (!row) return
+  // 접혀 있는 줄이면 표를 먼저 펼친 뒤 그 줄로 간다
+  if (row.hidden) {
+    window.dispatchEvent(new Event(SHOW_ALL_EVENT))
+    requestAnimationFrame(() => goToPatent(no))
+    return
+  }
   row.scrollIntoView({ behavior: 'smooth', block: 'center' })
   row.classList.remove('flash')
   void row.offsetWidth // 같은 줄을 다시 눌러도 깜빡이게
@@ -111,6 +121,13 @@ export default function TechReport({ report, checks, onOpenPatent }) {
   const warnings = checks?.warnings ?? []
   const byNo = new Map(report.patents.map((p) => [p.no, p]))
   const inferredCount = report.patents.filter((p) => p.purpose?.includes('(추정)')).length
+  const [showAllPatents, setShowAllPatents] = useState(false)
+  useEffect(() => {
+    const open = () => setShowAllPatents(true)
+    window.addEventListener(SHOW_ALL_EVENT, open)
+    return () => window.removeEventListener(SHOW_ALL_EVENT, open)
+  }, [])
+  const hiddenPatents = Math.max(0, report.patents.length - PATENTS_SHOWN)
   return (
     <article className="tech-report">
       <header className="tech-head">
@@ -127,8 +144,8 @@ export default function TechReport({ report, checks, onOpenPatent }) {
         <SectionHead title={report.quantTitle ? `정량 스냅샷: ${report.quantTitle}` : '정량 스냅샷'} />
         <div className="tech-kpis">
           {report.kpis.map((k) => (
-            <div key={k.key} className={`tech-kpi tone-line-${k.tone}`}>
-              <span className="kpi-label">{k.label}</span>
+            <div key={k.key} className="tech-kpi">
+              <span className="kpi-label"><i className={`dot tone-${k.tone}`} aria-hidden="true" />{k.label}</span>
               <strong>{k.value}</strong>
               <span className="kpi-sub">{k.detail}</span>
             </div>
@@ -195,8 +212,9 @@ export default function TechReport({ report, checks, onOpenPatent }) {
           <table className="tech-table tech-patents">
             <thead><tr><th>번호</th><th>출원인 · 기술 주제</th><th>해결하려는 기술적 문제</th><th>기존 기술 대비 차이점</th><th>핵심 개선 사항</th></tr></thead>
             <tbody>
-              {report.patents.map((p) => (
-                <tr key={p.no} id={`tech-patent-${p.no}`}>
+              {/* 접힌 줄도 그려 둔다: [n] 링크가 줄을 찾아 표를 펼칠 수 있게 */}
+              {report.patents.map((p, i) => (
+                <tr key={p.no} id={`tech-patent-${p.no}`} hidden={!showAllPatents && i >= PATENTS_SHOWN}>
                   <td className="tech-no">[{p.no}]</td>
                   <td>
                     <b><i className={`dot tone-${p.company}`} /> {COMPANY_SHORT[p.company]}</b> <span className="muted">{p.period}</span>
@@ -212,6 +230,24 @@ export default function TechReport({ report, checks, onOpenPatent }) {
             </tbody>
           </table>
         </div>
+        {hiddenPatents > 0 && (
+          <div className="more-area">
+            <div className="more-buttons">
+              {showAllPatents ? (
+                <button className="more-btn more-btn-quiet" onClick={() => setShowAllPatents(false)} aria-expanded="true">
+                  <span className="more-label">접기</span>
+                  <span className="more-arrow">⌃</span>
+                </button>
+              ) : (
+                <button className="more-btn" onClick={() => setShowAllPatents(true)} aria-expanded="false">
+                  <span className="more-label">더보기</span>
+                  <span className="more-arrow">⌄</span>
+                </button>
+              )}
+            </div>
+            <p className="more-hint">{showAllPatents ? `근거 특허 ${report.patents.length}건을 모두 표시했어요` : `${PATENTS_SHOWN}건 표시 · 남은 ${hiddenPatents}건`}</p>
+          </div>
+        )}
       </section>
 
       {report.takeaways.length > 0 && (
