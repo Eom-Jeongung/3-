@@ -13,7 +13,7 @@ export function buildSummaryInsights(sections, stats) {
       const key = subject.company ? `company:${subject.company}` : `field:${subject.field}`;
       const previous = candidates.get(key);
       // 회사는 한 번만 쓰고, 뒤에서 확인한 회사·분야 쌍이 회사 단독보다 구체적이면 교체한다.
-      if (!previous || (!previous.field && subject.field)) candidates.set(key, subject);
+      if (!previous || (!previous.field && subject.field)) candidates.set(key, { ...subject, sourceLine: line });
     }
   }
   const pairedFields = new Set([...candidates.values()].filter(({ company }) => company).map(({ field }) => field));
@@ -33,5 +33,6 @@ export function buildSummaryInsights(sections, stats) {
     return `- 확인해 볼 점: ${field} 분야의 출원을 살펴본다.`;
   });
   if (!lines.length) lines.push('- 확인해 볼 점: 추가로 살펴볼 주제를 고를 자료가 부족하다.');
-  return { text: ['## 시사점', ...lines].join('\n'), counts };
+  return { text: ['## 시사점', ...lines].join('\n'), counts,
+    sources: selected.map(({ company, field, sourceLine }) => ({ company, field, sourceLine })) };
 }

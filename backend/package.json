@@ -11,6 +11,7 @@
     "classify": "node --env-file-if-exists=.env scripts/run-classify.js",
     "ipc-check": "node --env-file-if-exists=.env scripts/ipc-level3-check.js",
     "ai-usage": "node --env-file-if-exists=.env scripts/ai-usage.js",
+    "summary-quality": "node --env-file-if-exists=.env scripts/summary-quality.js",
     "predev": "node -e \"const fs=require('fs'); if(!fs.existsSync('.env')) fs.writeFileSync('.env','')\"",
     "dev": "node --env-file-if-exists=.env --watch src/index.js",
     "start": "node --env-file-if-exists=.env src/index.js",

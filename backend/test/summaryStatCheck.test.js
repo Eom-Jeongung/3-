@@ -16,6 +16,46 @@ for (const [company, group, first, last, share] of [
 }
 const stats = { from: 2020, to: 2022, fields: [field, other], values };
 
+test('회사·분야 앞에 쓴 비중 연도를 보존하고 다른 연도의 비중을 통과시키지 않는다', () => {
+  const current = { from: 2023, to: 2024, fields: [field], totalField: '소자', values: [
+    { company: 'own', field, year: 2024, metric: 'share', value: 29 },
+  ] };
+  for (const value of [23, 29]) {
+    const result = checkStatistics(`2023년 자사 ${field} 비중은 ${value}%다.`, current);
+    assert.equal(result.statMismatches.length, 0);
+    assert.equal(result.statUnverified.length, 1);
+  }
+  const withYear = { ...current, values: [...current.values,
+    { company: 'own', field, year: 2023, metric: 'share', value: 23 }] };
+  assert.deepEqual(checkStatistics(`2023년 자사 ${field} 비중은 23%다.`, withYear), { statMismatches: [], statUnverified: [] });
+  assert.match(checkStatistics(`2023년 자사 ${field} 비중은 29%다.`, withYear).statMismatches[0], /2023 \/ share: 요약 29, 통계 23/);
+});
+
+test('다른 비교 기간이나 역방향 기간을 요청 기간의 증감률로 검증하지 않는다', () => {
+  const current = { from: 2023, to: 2024, fields: [field], values: [
+    { company: 'own', field, year: 2024, metric: 'change', value: 93 },
+  ] };
+  for (const period of ['2022년 대비 2024년', '2022~2024년', '2024년 대비 2023년']) {
+    for (const value of [75, 93]) {
+      const result = checkStatistics(`${period} 자사 ${field} 증감률은 ${value}%다.`, current);
+      assert.deepEqual(result.statMismatches, []);
+      assert.equal(result.statUnverified.length, 1);
+    }
+  }
+  assert.deepEqual(checkStatistics(`2023년 대비 2024년 자사 ${field} 증감률은 93%다.`, current), { statMismatches: [], statUnverified: [] });
+  assert.equal(checkStatistics(`2023년 대비 2024년 자사 ${field} 증감률은 75%다.`, current).statMismatches.length, 1);
+});
+
+test('기간과 전체 건수가 모두 0건이라는 주장을 모든 연도와 대조한다', () => {
+  const current = { ...stats, totalField: '소자', values: [2020, 2021, 2022].map((year) => ({
+    company: 'china', field: '소자', year, metric: 'count', value: 0,
+  })) };
+  const line = '중국 2020~2022년 회사 전체 건수가 모두 0건이다.';
+  assert.deepEqual(checkStatistics(line, current), { statMismatches: [], statUnverified: [] });
+  const changed = { ...current, values: current.values.map((row) => ({ ...row, value: row.year === 2021 ? 1 : 0 })) };
+  assert.match(checkStatistics(line, changed).statMismatches[0], /2021/);
+});
+
 test('부호 있는 증감률과 전체 출원 중 비중을 해당 분야와 대조한다', () => {
   const scoped = { ...stats, totalField: '소자' };
   const comparison = `삼성 ${other} 2020년 50건 → 2022년 100건(100% 증가), 자사 같은 분야(-20%)와 방향이 다르다.`;

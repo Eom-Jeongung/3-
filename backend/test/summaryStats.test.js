@@ -329,6 +329,9 @@ test('요약에 자체 집계한 성장 분야와 특허 원문 발췌를 저장
     };
     const result = await generateTrendSummary(scope);
     assert.equal(sent.length, 4);
+    assert.equal(result.checks.quality.requestCount, 4);
+    assert.ok(result.checks.quality.parts[3].issues.some(({ type, text, finalPresence }) =>
+      type === 'unexpectedHeading' && text === '## 시사점 및 제언' && finalPresence === 'changed_or_omitted'));
     assert.ok(sent.slice(0, 3).every((request) => request.messages[1].content.includes('[구조화 통계:')));
     assert.match(sent[1].messages[1].content, /\[출원 건수가 늘어난 분야\]/);
     assert.match(sent[3].messages[1].content, /\[원문 발췌 후보\]/);

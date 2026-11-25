@@ -12,6 +12,7 @@ import { checkStatistics } from './summaryStatCheck.js';
 import { groundInterpretations } from './summaryEvidence.js';
 import { buildSummaryInsights } from './summaryInsights.js';
 import { patentExcerptSentences, renderPatentExcerpts } from './summaryPatentExcerpts.js';
+import { summaryQuality } from './summaryQuality.js';
 
 const COMPANY = { own: '자사(LG디스플레이)', competitor: '경쟁사(삼성디스플레이)', china: '중국 경쟁사(BOE·CSOT·Tianma·Visionox)' };
 const EVIDENCE_LIMIT = 10;
@@ -333,6 +334,9 @@ export async function generateTrendSummary({ level1, level2, level3, from, to },
     ...(evidence.length < 4 ? [`근거 후보 특허 ${evidence.length}건: 근거가 부족할 수 있습니다.`] : [])];
   checks.foreignText = grounded.foreignText;
   checks.dataWarnings = dataWarnings;
+  checks.quality = summaryQuality({ prompts, parts: [...parts, selection], tasks: SUMMARY_TASKS,
+    finalContent: content, stats: validationStats, insightSources: insights.sources,
+    chinaCountOnly: facts.includes('참고: 중국 경쟁사는') });
   const row = {
     ...scope,
     period_from: from,
