@@ -1,11 +1,11 @@
 import { checkStatistics, smallSampleTrendCounts } from './summaryStatCheck.js';
 
 // AI 요약의 줄마다 근거를 확인해 표시를 붙인다. 원문은 지우지 않는다 (맞는 내용까지 사라지지 않게)
-// - 통계와 다른 숫자가 있으면 "[숫자 다름]", 확인하지 못한 문장은 "[확인 필요]", 한자·일본 글자가 섞이면 "[다른 언어]"
+// - 통계와 다른 숫자가 있으면 "[숫자 다름]", 확인하지 못한 문장은 "[주의]" (2026-11-23 '확인 필요'에서 바꿈), 한자·일본 글자가 섞이면 "[다른 언어]"
 // - 주목 특허는 회사와 선정 이유를 근거 목록에서 가져오고, 기술 설명은 남겨 기존 근거 검사에 넘긴다
 // - 해석은 "회사 분야 연도 건수 | 출원번호 | 「원문」" 형식이고 통계·특허 원문이 맞을 때만 확인된 해석으로 정리한다
 //   이것은 추적 가능성 확인이지, 해석의 인과관계를 증명하는 것은 아니다
-export const FLAGS = { mismatch: '숫자 다름', unverified: '확인 필요', foreign: '다른 언어' };
+export const FLAGS = { mismatch: '숫자 다름', unverified: '주의', foreign: '다른 언어' };
 const FOREIGN = /[぀-ヿ㐀-鿿]/; // 일본 글자, 한자
 
 export function groundInterpretations(content, evidence, stats) {
@@ -21,7 +21,7 @@ export function groundInterpretations(content, evidence, stats) {
     const foreign = FOREIGN.test(body);
     if (foreign) foreignText.push(body);
     if (/한계/.test(section)) return foreign ? mark('foreign', body) : line;
-    // 시사점은 숫자 없이 "더 살펴볼 점"을 쓰는 칸이라, 숫자가 없다고 [확인 필요]를 붙이지 않는다
+    // 시사점은 숫자 없이 "더 살펴볼 점"을 쓰는 칸이라, 숫자가 없다고 [주의]를 붙이지 않는다
     // 숫자를 썼으면 자료와 맞는지, 특허를 들었으면 근거 목록에 있는 특허인지만 본다
     if (/시사점/.test(section)) {
       if (foreign) { warnings.push(`한국어가 아닌 글자가 섞인 문장: ${body}`); return mark('foreign', body); }

@@ -131,6 +131,43 @@ function migrate() {
   allowChinaType();
   // 요약을 사람이 만들었는지(manual) 분기 자동 생성(auto)인지
   if (!colsOf('trend_summaries').includes('source')) db.exec("ALTER TABLE trend_summaries ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'");
+  techReportTable();
+}
+
+// AI 기술 분석 보고서 (techReport.js). 건수 요약(trend_summaries)과 따로 저장한다 (2026-11-23)
+// content는 보고서 JSON. 같은 범위·기간도 새 행으로 쌓아 이전 보고서와 비교한다
+function techReportTable() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tech_reports (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      level1           TEXT NOT NULL DEFAULT '',
+      level2           TEXT NOT NULL DEFAULT '',
+      level3           TEXT NOT NULL DEFAULT '',
+      period_from      INTEGER NOT NULL,
+      period_to        INTEGER NOT NULL,
+      criteria_version TEXT NOT NULL,
+      model            TEXT,
+      content          TEXT NOT NULL,     -- 보고서 (JSON)
+      facts            TEXT NOT NULL,     -- AI에게 준 자료
+      checks           TEXT NOT NULL,     -- 자동 검증 결과 (JSON)
+      elapsed_ms       INTEGER,
+      source           TEXT NOT NULL DEFAULT 'manual'
+    );
+    CREATE INDEX IF NOT EXISTS idx_tech_reports_scope ON tech_reports (level1, level2, level3, period_from, period_to);
+  `);
+  // 처음 만들 때 잠깐 trend_summaries에 kind='tech'로 저장한 보고서를 옮긴다 (건수 요약 화면에 섞이지 않게)
+  const cols = db.prepare('PRAGMA table_info(trend_summaries)').all().map((c) => c.name);
+  if (!cols.includes('kind')) return;
+  db.transaction(() => {
+    const moved = db.prepare(`
+      INSERT INTO tech_reports (created_at, level1, level2, level3, period_from, period_to, criteria_version, model, content, facts, checks, elapsed_ms, source)
+      SELECT created_at, level1, level2, level3, period_from, period_to, criteria_version, model, content, facts, checks, elapsed_ms, source
+      FROM trend_summaries WHERE kind = 'tech'
+    `).run().changes;
+    db.prepare("DELETE FROM trend_summaries WHERE kind = 'tech'").run();
+    if (moved) console.log(`기술 분석 보고서 ${moved}개를 tech_reports로 옮김`);
+  })();
 }
 
 // 중국 경쟁사(applicant_type 'china')를 넣을 수 있게 patents 표를 다시 만든다 (2026-11 추가)

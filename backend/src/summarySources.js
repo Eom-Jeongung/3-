@@ -1,5 +1,5 @@
 const segmenter = new Intl.Segmenter('ko', { granularity: 'sentence' });
-export const summaryBody = (text) => text.trim().replace(/^[-*]\s+/, '').replace(/\[(?:확인 필요|숫자 다름|다른 언어)\]\s*/g, '');
+export const summaryBody = (text) => text.trim().replace(/^[-*]\s+/, '').replace(/\[(?:주의|확인 필요|숫자 다름|다른 언어)\]\s*/g, '');
 export const canonicalSummaryBody = (text) => summaryBody(text).replace(/\s+/g, ' ');
 
 /** 제목을 바꾸거나 중복 제목을 출력해도, 실제 조립과 기록이 동일한 첫 섹션을 선택한다. */

@@ -42,8 +42,10 @@ function logCall(row) {
  * @param {string} purpose 무엇에 쓴 호출인지 (ai_calls 기록용, 예: 'trend-summary')
  * @returns {Promise<string>} 모델이 돌려준 글
  */
-export async function chat(messages, { maxTokens = 800, purpose = 'etc', timeoutMs = TIMEOUT_MS } = {}) {
-  const { baseUrl, apiKey, model, temperature, reasoningEffort } = config();
+// model: 이 호출만 다른 모델로 (예: 기술 분석 보고서의 인사이트는 AI_INSIGHT_MODEL). 비우면 AI_MODEL
+export async function chat(messages, { maxTokens = 800, purpose = 'etc', timeoutMs = TIMEOUT_MS, model: modelOverride } = {}) {
+  const { baseUrl, apiKey, model: defaultModel, temperature, reasoningEffort } = config();
+  const model = (modelOverride ?? '').trim() || defaultModel;
   if (!baseUrl || !model) throw new Error('AI 설정(AI_BASE_URL, AI_MODEL)이 비어 있습니다');
   const sampling = temperature !== '' && Number.isFinite(Number(temperature)) ? { temperature: Number(temperature) } : {};
   if (reasoningEffort) sampling.reasoning = { effort: reasoningEffort };

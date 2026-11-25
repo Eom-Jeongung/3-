@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { summaryQuality, summarizeQuality } from '../src/summaryQuality.js';
-import { composeSummaryParts } from '../src/summarySources.js';
+import { composeSummaryParts, summaryBody } from '../src/summarySources.js';
 import { buildSummaryInsights } from '../src/summaryInsights.js';
 
 const stats = { from: 2022, to: 2024, fields: ['구동 회로', '전원 회로'] };
@@ -21,8 +21,8 @@ test('원응답의 위반과 최종본 잔존을 구분하고 시사점 근거�
   parts[0] = `## 핵심 메시지\n- ${mixed}`;
   parts[2] = `## 경쟁사 동향\n- ${noPeriod}`;
   const source = composeSummaryParts(parts, tasks).origins.get('핵심 메시지')[1];
-  const result = summaryQuality({ ...base, parts, finalContent: `## 핵심 메시지\n- [확인 필요] ${mixed}`,
-    finalSources: [{ ...source, text: `- [확인 필요] ${mixed}` }],
+  const result = summaryQuality({ ...base, parts, finalContent: `## 핵심 메시지\n- [주의] ${mixed}`,
+    finalSources: [{ ...source, text: `- [주의] ${mixed}` }],
     insightSources: [{ company: 'competitor', field: '구동 회로', sourceLine: `- ${mixed}`,
       origin: { lineId: source.lineId, sentenceIds: source.sentences.map(({ id }) => id) } }] });
   const mixedIssue = result.parts[0].issues.find(({ type }) => type === 'mixedSubjects');
@@ -152,4 +152,10 @@ test('출처를 유지한 후처리와 탈락을 구분하고 여러 문장의 �
     finalSources: [{ ...source, text: '- 삼성 구동 회로 건수만 표시' }] });
   assert.equal(result.parts[0].issues[0].finalPresence, 'transformed');
   assert.ok(!result.parts[2].issues.some(({ type }) => type === 'mixedSubjects'));
+});
+
+// 2026-11-25: 기술 분석 병합 때 '확인 필요' 표시를 '주의'로 바꿨다. 출처 추적은 두 표시 모두 떼고 비교한다
+test('출처 추적은 [주의]와 예전 [확인 필요] 표시를 모두 떼고 비교한다', () => {
+  assert.equal(summaryBody('- [주의] 자사 봉지 2024년 69건'), '자사 봉지 2024년 69건');
+  assert.equal(summaryBody('- [확인 필요] 자사 봉지 2024년 69건'), '자사 봉지 2024년 69건');
 });

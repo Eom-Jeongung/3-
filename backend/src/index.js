@@ -8,6 +8,7 @@ import patentsRouter from './routes/patents.js';
 import syncRouter from './routes/sync.js';
 import trendsRouter from './routes/trends.js';
 import summariesRouter from './routes/summaries.js';
+import techReportsRouter from './routes/techReports.js';
 import { startScheduler } from './scheduler.js';
 import { warmUpEmerging } from './emerging.js';
 import { siteAuth } from './siteAuth.js';
@@ -39,6 +40,7 @@ app.use('/api/patents', patentsRouter);
 app.use('/api/sync', syncRouter);
 app.use('/api/trends', trendsRouter);
 app.use('/api/summaries', summariesRouter);
+app.use('/api/tech-reports', techReportsRouter); // AI 기술 분석 보고서 (건수 요약과 따로)
 
 // 배포용: npm run build로 만든 화면(frontend/dist)이 있으면 이 서버가 같이 띄운다
 // 개발 중(npm run dev)에는 Vite가 화면을 띄우므로 dist가 없어도 된다

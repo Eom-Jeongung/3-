@@ -14,7 +14,7 @@ test('같은 회사·분야의 검증된 통계와 실제 전달 원문을 연�
 });
 
 // 2026-11-18: 근거를 확인하지 못한 줄은 지우지 않고 원문 앞에 표시를 붙인다 (맞는 내용까지 사라지지 않게)
-test('없는 원문·다른 회사·없는 특허·근거 없는 해석은 원문을 남기고 확인 필요로 표시한다', () => {
+test('없는 원문·다른 회사·없는 특허·근거 없는 해석은 원문을 남기고 주의로 표시한다', () => {
   const inputs = [
     `자사 ${field} 2022년 40건 | 1020240147664 | 「성능이 크게 향상된다」`,
     `삼성 ${field} 2022년 40건 | 1020240147664 | 「터치 센서 전극을 포함하는」`,
@@ -23,11 +23,11 @@ test('없는 원문·다른 회사·없는 특허·근거 없는 해석은 원�
   ];
   for (const input of inputs) {
     const result = groundInterpretations(`- 해석: ${input}`, evidence, stats);
-    assert.equal(result.content, `- [확인 필요] 해석: ${input}`);
+    assert.equal(result.content, `- [주의] 해석: ${input}`);
     assert.equal(result.warnings.length, 1);
   }
   const different = [{ ...evidence[0], field: '패널 구조 설계' }];
-  assert.match(groundInterpretations(`- 해석: 자사 ${field} 2022년 40건 | 1020240147664 | 「터치 센서 전극을 포함하는」`, different, stats).content, /^- \[확인 필요\] 해석:/);
+  assert.match(groundInterpretations(`- 해석: 자사 ${field} 2022년 40건 | 1020240147664 | 「터치 센서 전극을 포함하는」`, different, stats).content, /^- \[주의\] 해석:/);
 });
 
 test('해석의 통계가 비교 문장이어도 숫자가 모두 맞고 원문 인용이 맞으면 확인된 해석으로 정리한다', () => {
@@ -47,7 +47,7 @@ test('확인 안 된 서술은 표시해 남기고, 주목 특허는 실제 명�
   const e = [{ ...evidence[0], company: '자사', reason: '급증 용어' }];
   const text = `## 핵심 흐름\n- 검증 안 된 회사 전략입니다\n- 자사 ${field} 2022년 40건\n- 자사 ${field} 2022년 45건\n## 주목 특허\n- 1020240147664 거짓 주장`;
   const result = groundInterpretations(text, e, stats);
-  assert.match(result.content, /- \[확인 필요\] 검증 안 된 회사 전략입니다/);
+  assert.match(result.content, /- \[주의\] 검증 안 된 회사 전략입니다/);
   assert.match(result.content, /\n- 자사 터치·센서 2022년 40건\n/);
   assert.match(result.content, /- \[숫자 다름\] 자사 터치·센서 2022년 45건/);
   assert.match(result.content, /1020240147664 \(자사\): 표시 장치 \(급증 용어\)/);
@@ -70,10 +70,10 @@ test('주목 특허의 기술 설명을 남기고 회사와 선정 이유는 근
   assert.match(empty.content, /근거 후보 특허가 없어/);
 });
 
-test('기간 중 작은 표본이 있으면 사실 인용이 있어도 해석을 확인 필요로 둔다', () => {
+test('기간 중 작은 표본이 있으면 사실 인용이 있어도 해석을 주의로 둔다', () => {
   const small = { ...stats, minimumSample: 30, values: [...stats.values, { company: 'own', field, year: 2020, metric: 'count', value: 29 }] };
   const text = `- 해석: 자사 ${field} 2022년 40건 | 1020240147664 | 「터치 센서 전극을 포함하는」`;
-  assert.match(groundInterpretations(text, evidence, small).content, /^- \[확인 필요\] 해석:/);
+  assert.match(groundInterpretations(text, evidence, small).content, /^- \[주의\] 해석:/);
   const sufficient = { ...small, values: small.values.map((v) => v.year === 2020 ? { ...v, value: 30 } : v) };
   assert.match(groundInterpretations(text, evidence, sufficient).content, /특허\(1020240147664\)/);
 });
@@ -96,7 +96,7 @@ test('시사점은 숫자가 없어도 표시하지 않고, 근거 목록에 없
   assert.deepEqual(okResult.warnings, []);
 
   const unknown = groundInterpretations('## 시사점\n- 확인해 볼 점: 1020240147665 특허를 살펴본다.', evidence, stats);
-  assert.match(unknown.content, /- \[확인 필요\] 확인해 볼 점/);
+  assert.match(unknown.content, /- \[주의\] 확인해 볼 점/);
 
   const wrong = groundInterpretations(`## 시사점\n- 확인해 볼 점: 자사 ${field} 2022년 99건을 살펴본다.`, evidence, stats);
   assert.match(wrong.content, /- \[숫자 다름\] 확인해 볼 점/);
